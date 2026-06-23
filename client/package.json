@@ -30,6 +30,11 @@
       "react-app/jest"
     ]
   },
+  "jest": {
+    "transformIgnorePatterns": [
+      "/node_modules/(?!(uuid|qrcode.react)/)"
+    ]
+  },
   "browserslist": {
     "production": [
       ">0.2%",

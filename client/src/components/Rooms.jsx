@@ -52,6 +52,7 @@ const Room = () => {
   const peersRef        = useRef(new Map()); // remotePeerId → RTCPeerConnection
   const reofferTimers   = useRef(new Map()); // remotePeerId → TimeoutID
   const icCounts        = useRef(new Map()); // remotePeerId → number
+  const iceBufs         = useRef(new Map()); // remotePeerId → RTCIceCandidate[] (pre-description buffer)
 
   // Causes re-render only when the participant list visibly changes
   const [remoteStreams, setRemoteStreams] = useState(new Map()); // remotePeerId → MediaStream
@@ -88,7 +89,17 @@ const Room = () => {
 
     peersRef.current.set(remotePeerId, peer);
     icCounts.current.set(remotePeerId, 0);
+    iceBufs.current.set(remotePeerId, []);
     return peer;
+  };
+
+  // Drain any ICE candidates that arrived before setRemoteDescription completed
+  const drainIceBuf = async (remotePeerId, peer) => {
+    const buf = iceBufs.current.get(remotePeerId) || [];
+    iceBufs.current.set(remotePeerId, []);
+    for (const c of buf) {
+      try { await peer.addIceCandidate(c); } catch {}
+    }
   };
 
   const handleNegotiationNeededFor = async (remotePeerId) => {
@@ -129,6 +140,7 @@ const Room = () => {
   const handleOfferFrom = async (remotePeerId, offer) => {
     const peer = createPeerFor(remotePeerId);
     await peer.setRemoteDescription(new RTCSessionDescription(offer));
+    await drainIceBuf(remotePeerId, peer); // apply any candidates that raced the offer
     userStream.current.getTracks().forEach(t => peer.addTrack(t, userStream.current));
     const answer = await peer.createAnswer();
     await peer.setLocalDescription(answer);
@@ -145,6 +157,7 @@ const Room = () => {
     const peer = peersRef.current.get(remotePeerId);
     if (peer) { peer.close(); peersRef.current.delete(remotePeerId); }
     icCounts.current.delete(remotePeerId);
+    iceBufs.current.delete(remotePeerId);
     const tid = reofferTimers.current.get(remotePeerId);
     if (tid) clearTimeout(tid);
     reofferTimers.current.delete(remotePeerId);
@@ -157,6 +170,7 @@ const Room = () => {
     peersRef.current.forEach(peer => peer.close());
     peersRef.current.clear();
     icCounts.current.clear();
+    iceBufs.current.clear();
   };
 
   // ── Controls ──────────────────────────────────────────────────────────────
@@ -238,6 +252,7 @@ const Room = () => {
             const peer = peersRef.current.get(msg.from);
             if (peer) {
               await peer.setRemoteDescription(new RTCSessionDescription(msg.answer));
+              await drainIceBuf(msg.from, peer);
               const tid = reofferTimers.current.get(msg.from);
               if (tid) { clearTimeout(tid); reofferTimers.current.delete(msg.from); }
             }
@@ -246,7 +261,13 @@ const Room = () => {
 
           if (msg.type === 'iceCandidate') {
             const peer = peersRef.current.get(msg.from);
-            if (peer) { try { await peer.addIceCandidate(msg.candidate); } catch {} }
+            if (!peer || !peer.remoteDescription) {
+              const buf = iceBufs.current.get(msg.from) || [];
+              buf.push(msg.candidate);
+              iceBufs.current.set(msg.from, buf);
+            } else {
+              try { await peer.addIceCandidate(msg.candidate); } catch {}
+            }
             return;
           }
 
@@ -354,11 +375,13 @@ const Room = () => {
         End-to-end encrypted · No data stored · Peer-to-peer · Up to 8 participants
       </p>
 
-      <img
-        src="/macklepenny-movement.svg"
-        alt="Macklepenny Movement — Building bridges together"
-        className="w-56 opacity-60 hover:opacity-90 transition-opacity"
-      />
+      <div className="flex justify-center">
+        <img
+          src="/macklepenny-movement.svg"
+          alt="Macklepenny Movement — Building bridges together"
+          className="w-56 opacity-60 hover:opacity-90 transition-opacity"
+        />
+      </div>
 
       {/* ── QR code modal ── */}
       {showQR && (() => {
