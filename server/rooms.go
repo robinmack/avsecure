@@ -12,10 +12,17 @@ import (
 const maxParticipantsPerRoom = 8
 
 type Participant struct {
-	Host   bool
-	Conn   *websocket.Conn
-	Mutex  sync.Mutex
-	PeerID string
+	Host     bool
+	Conn     *websocket.Conn
+	Mutex    sync.Mutex
+	PeerID   string
+	Nickname string
+}
+
+// ParticipantInfo is the wire-format entry sent in roster/join messages.
+type ParticipantInfo struct {
+	PeerID   string `json:"peerId"`
+	Nickname string `json:"nickname"`
 }
 
 type RoomMap struct {
@@ -46,7 +53,7 @@ func (r *RoomMap) CreateRoom() string {
 	}
 }
 
-func (r *RoomMap) InsertIntoRoom(roomID string, host bool, conn *websocket.Conn, peerID string) error {
+func (r *RoomMap) InsertIntoRoom(roomID string, host bool, conn *websocket.Conn, peerID, nickname string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -62,7 +69,7 @@ func (r *RoomMap) InsertIntoRoom(roomID string, host bool, conn *websocket.Conn,
 			return fmt.Errorf("already in room %s", roomID)
 		}
 	}
-	r.Map[roomID] = append(r.Map[roomID], &Participant{Host: host, Conn: conn, PeerID: peerID})
+	r.Map[roomID] = append(r.Map[roomID], &Participant{Host: host, Conn: conn, PeerID: peerID, Nickname: nickname})
 	return nil
 }
 
@@ -113,6 +120,22 @@ func (r *RoomMap) GetParticipantIDs(roomID string) []string {
 		ids = append(ids, p.PeerID)
 	}
 	return ids
+}
+
+// GetParticipantInfo returns PeerID+Nickname for every current participant.
+// Returns nil if the room does not exist.
+func (r *RoomMap) GetParticipantInfo(roomID string) []ParticipantInfo {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	participants, exists := r.Map[roomID]
+	if !exists {
+		return nil
+	}
+	infos := make([]ParticipantInfo, 0, len(participants))
+	for _, p := range participants {
+		infos = append(infos, ParticipantInfo{PeerID: p.PeerID, Nickname: p.Nickname})
+	}
+	return infos
 }
 
 // Excludes ambiguous characters: 0/O, 1/l/I to prevent transcription errors

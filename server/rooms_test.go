@@ -128,7 +128,7 @@ func TestInsertIntoRoom_Success(t *testing.T) {
 	id := rm.CreateRoom()
 
 	conn := pool.Conn(t)
-	if err := rm.InsertIntoRoom(id, false, conn, "peer-1"); err != nil {
+	if err := rm.InsertIntoRoom(id, false, conn, "peer-1", ""); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -146,7 +146,7 @@ func TestInsertIntoRoom_RoomNotFound(t *testing.T) {
 	rm.Init()
 
 	conn := pool.Conn(t)
-	err := rm.InsertIntoRoom("nonexistent", false, conn, "peer-1")
+	err := rm.InsertIntoRoom("nonexistent", false, conn, "peer-1", "")
 	if err == nil {
 		t.Fatal("expected error for non-existent room, got nil")
 	}
@@ -162,12 +162,12 @@ func TestInsertIntoRoom_RoomFull(t *testing.T) {
 
 	for i := 0; i < maxParticipantsPerRoom; i++ {
 		peerID := fmt.Sprintf("peer-%d", i)
-		if err := rm.InsertIntoRoom(id, false, pool.Conn(t), peerID); err != nil {
+		if err := rm.InsertIntoRoom(id, false, pool.Conn(t), peerID, ""); err != nil {
 			t.Fatalf("fill slot %d: %v", i, err)
 		}
 	}
 
-	err := rm.InsertIntoRoom(id, false, pool.Conn(t), "overflow-peer")
+	err := rm.InsertIntoRoom(id, false, pool.Conn(t), "overflow-peer", "")
 	if err == nil {
 		t.Fatal("expected error when room is full, got nil")
 	}
@@ -182,10 +182,10 @@ func TestInsertIntoRoom_DuplicateConnection(t *testing.T) {
 	id := rm.CreateRoom()
 
 	conn := pool.Conn(t)
-	if err := rm.InsertIntoRoom(id, false, conn, "dup-peer"); err != nil {
+	if err := rm.InsertIntoRoom(id, false, conn, "dup-peer", ""); err != nil {
 		t.Fatalf("first insert: %v", err)
 	}
-	if err := rm.InsertIntoRoom(id, false, conn, "dup-peer"); err == nil {
+	if err := rm.InsertIntoRoom(id, false, conn, "dup-peer", ""); err == nil {
 		t.Fatal("expected error on duplicate connection, got nil")
 	}
 }
@@ -202,8 +202,8 @@ func TestRemoveFromRoom_RemovesParticipant(t *testing.T) {
 
 	connA := pool.Conn(t)
 	connB := pool.Conn(t)
-	rm.InsertIntoRoom(id, false, connA, "peer-a")
-	rm.InsertIntoRoom(id, false, connB, "peer-b")
+	rm.InsertIntoRoom(id, false, connA, "peer-a", "")
+	rm.InsertIntoRoom(id, false, connB, "peer-b", "")
 
 	rm.RemoveFromRoom(id, connA)
 
@@ -228,7 +228,7 @@ func TestRemoveFromRoom_DeletesEmptyRoom(t *testing.T) {
 	id := rm.CreateRoom()
 
 	conn := pool.Conn(t)
-	rm.InsertIntoRoom(id, false, conn, "peer-1")
+	rm.InsertIntoRoom(id, false, conn, "peer-1", "")
 	rm.RemoveFromRoom(id, conn)
 
 	if _, ok := rm.Get(id); ok {
@@ -253,9 +253,9 @@ func TestGetParticipantIDs_ReturnsAllIDs(t *testing.T) {
 	rm.Init()
 	id := rm.CreateRoom()
 
-	rm.InsertIntoRoom(id, false, pool.Conn(t), "p1")
-	rm.InsertIntoRoom(id, false, pool.Conn(t), "p2")
-	rm.InsertIntoRoom(id, false, pool.Conn(t), "p3")
+	rm.InsertIntoRoom(id, false, pool.Conn(t), "p1", "")
+	rm.InsertIntoRoom(id, false, pool.Conn(t), "p2", "")
+	rm.InsertIntoRoom(id, false, pool.Conn(t), "p3", "")
 
 	ids := rm.GetParticipantIDs(id)
 	if len(ids) != 3 {
@@ -289,8 +289,8 @@ func TestGetParticipantIDs_ExcludesRemovedPeer(t *testing.T) {
 	id := rm.CreateRoom()
 
 	connA := pool.Conn(t)
-	rm.InsertIntoRoom(id, false, connA, "peer-a")
-	rm.InsertIntoRoom(id, false, pool.Conn(t), "peer-b")
+	rm.InsertIntoRoom(id, false, connA, "peer-a", "")
+	rm.InsertIntoRoom(id, false, pool.Conn(t), "peer-b", "")
 	rm.RemoveFromRoom(id, connA)
 
 	ids := rm.GetParticipantIDs(id)
@@ -306,6 +306,43 @@ func TestGet_NotFound(t *testing.T) {
 	rm.Init()
 	if _, ok := rm.Get("missing"); ok {
 		t.Error("Get should return false for non-existent room")
+	}
+}
+
+// ── RoomMap.GetParticipantInfo ────────────────────────────────────────────────
+
+func TestGetParticipantInfo_ReturnsNicknamesWithIDs(t *testing.T) {
+	pool := newWSPool()
+	defer pool.Close()
+
+	var rm RoomMap
+	rm.Init()
+	id := rm.CreateRoom()
+
+	rm.InsertIntoRoom(id, false, pool.Conn(t), "p1", "Tiger")
+	rm.InsertIntoRoom(id, false, pool.Conn(t), "p2", "Bear")
+
+	infos := rm.GetParticipantInfo(id)
+	if len(infos) != 2 {
+		t.Fatalf("expected 2 infos, got %d", len(infos))
+	}
+	byID := map[string]string{}
+	for _, info := range infos {
+		byID[info.PeerID] = info.Nickname
+	}
+	if byID["p1"] != "Tiger" {
+		t.Errorf("expected p1=Tiger, got %q", byID["p1"])
+	}
+	if byID["p2"] != "Bear" {
+		t.Errorf("expected p2=Bear, got %q", byID["p2"])
+	}
+}
+
+func TestGetParticipantInfo_NilForMissingRoom(t *testing.T) {
+	var rm RoomMap
+	rm.Init()
+	if rm.GetParticipantInfo("ghost") != nil {
+		t.Error("expected nil for non-existent room")
 	}
 }
 

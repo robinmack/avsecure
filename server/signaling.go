@@ -133,11 +133,15 @@ func JoinRoomRequestHandler(w http.ResponseWriter, r *http.Request) {
 			websocket.FormatCloseMessage(websocket.CloseUnsupportedData, "missing peerId"))
 		return
 	}
+	nickname, _ := joinMsg["nickname"].(string)
+	if nickname == "" {
+		nickname = "Anonymous"
+	}
 
-	// Snapshot existing peer IDs before inserting the newcomer.
-	existingIDs := AllRooms.GetParticipantIDs(roomID)
+	// Snapshot existing participants before inserting the newcomer.
+	existingInfo := AllRooms.GetParticipantInfo(roomID)
 
-	if err := AllRooms.InsertIntoRoom(roomID, false, ws, peerID); err != nil {
+	if err := AllRooms.InsertIntoRoom(roomID, false, ws, peerID, nickname); err != nil {
 		log.Printf("InsertIntoRoom error: %v", err)
 		ws.WriteMessage(websocket.CloseMessage,
 			websocket.FormatCloseMessage(websocket.ClosePolicyViolation, err.Error()))
@@ -145,12 +149,12 @@ func JoinRoomRequestHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer AllRooms.RemoveFromRoom(roomID, ws)
 
-	log.Printf("Peer %s joined room %s (%d existing peers)", peerID, roomID, len(existingIDs))
+	log.Printf("Peer %s (%s) joined room %s (%d existing peers)", peerID, nickname, roomID, len(existingInfo))
 
 	// Send the roster to the newcomer (may be empty for the first participant).
 	if err := ws.WriteJSON(map[string]interface{}{
 		"type":  "roster",
-		"peers": existingIDs,
+		"peers": existingInfo,
 	}); err != nil {
 		log.Printf("Failed to send roster to %s: %v", peerID, err)
 		return
@@ -158,7 +162,7 @@ func JoinRoomRequestHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Notify existing participants that a new peer has joined.
 	Broadcast <- BroadcastMsg{
-		Message: map[string]interface{}{"type": "join", "peerId": peerID},
+		Message: map[string]interface{}{"type": "join", "peerId": peerID, "nickname": nickname},
 		RoomID:  roomID,
 		Client:  ws,
 	}

@@ -207,6 +207,42 @@ README updated with both options under "Configure the frontend."
 
 ---
 
+## 2026-06-23 — Session 8: Nickname system
+
+### Nickname entry screen (pre-join gate)
+
+Users now pick a nickname before entering any room. Joining is gated — the WebSocket does not connect until a name is confirmed.
+
+**UI:**
+- Clean centered card with text input, 🎲 Randomize button, and "Join as [name]" button.
+- Randomize picks from a list of 65 curated nouns (animals, foods, occupations).
+- "Join as [name]" disabled until the input has content; pressing Enter also works.
+- The room is never loaded (no camera, no WebSocket) until the user confirms.
+
+**Signaling changes (protocol update):**
+- `join` message: `{ type: "join", peerId, nickname }` — client includes the nickname.
+- `roster` entries: `{ peerId, nickname }` objects instead of bare ID strings.
+- `join` broadcast: `{ type: "join", peerId, nickname }` — existing peers store the name on arrival.
+
+**Display:**
+- Each video tile shows the participant's nickname in a gradient header overlay.
+- Self-view shows "[nickname] (you)".
+- Nicknames are stored per peer and cleaned up when a peer leaves.
+
+**Server changes (`server/rooms.go`, `server/signaling.go`):**
+- `Participant` struct gains `Nickname string`.
+- `InsertIntoRoom` takes `nickname string` as a new parameter.
+- New `ParticipantInfo` struct and `GetParticipantInfo()` method return `{peerId, nickname}` slices.
+- `JoinRoomRequestHandler` extracts nickname from join message (defaults to "Anonymous" if absent for backward compat), uses `GetParticipantInfo` for the roster response, includes nickname in the join broadcast.
+
+**TDD:** Tests written first; all 12 client tests pass, all server tests pass (`go test ./server/... -race`).
+
+### Diagnostic logging left in place
+
+`[AV]` console logging added in Session 7 is still present to help diagnose the 3-participant visibility bug. Will be removed once that bug is resolved.
+
+---
+
 ## 2026-06-23 — Session 6: Offer-glare fix (3-participant bug)
 
 ### Root cause

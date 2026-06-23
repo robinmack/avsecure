@@ -6,8 +6,9 @@
  * message sequence and asserts on the resulting peer state.
  */
 
+import '@testing-library/jest-dom';
 import React from 'react';
-import { render, act, waitFor } from '@testing-library/react';
+import { render, act, waitFor, screen, fireEvent } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import Room from './Rooms';
 
@@ -118,14 +119,28 @@ async function waitForWs() {
   await waitFor(() => { if (!ws) throw new Error('ws not ready'); });
 }
 
-/** Boot up the component and open the WS connection. Called once per test. */
-async function setup() {
+/** Enter a nickname and open the WS connection. Called once per test. */
+async function setupWithNickname(name = 'TestBird') {
   renderRoom();
+  // Wait for the nickname entry screen (gated before WS connects)
+  const input = await screen.findByPlaceholderText(/nickname/i);
+  await act(async () => {
+    fireEvent.change(input, { target: { value: name } });
+  });
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(`join as ${name}`, 'i') }));
+    await new Promise(r => setTimeout(r, 0));
+  });
   await waitForWs();
   await act(async () => {
     ws.emit('open', {});
     await new Promise(r => setTimeout(r, 0));
   });
+}
+
+/** Convenience wrapper: boot the component with a default nickname. */
+async function setup() {
+  return setupWithNickname('TestBird');
 }
 
 /** Send one WS message and wait for all resulting state updates to settle. */
@@ -152,7 +167,10 @@ async function sendConcurrent(...messages) {
 
 test('creates one RTCPeerConnection per peer in the roster', async () => {
   await setup();
-  await send({ type: 'roster', peers: ['peer-A', 'peer-B'] });
+  await send({ type: 'roster', peers: [
+    { peerId: 'peer-A', nickname: 'Tiger' },
+    { peerId: 'peer-B', nickname: 'Bear' },
+  ]});
   expect(peers.length).toBe(2);
 });
 
@@ -229,11 +247,67 @@ test('re-offer from remote peer reuses existing connection instead of discarding
 
 test('leaving peer closes its connection without affecting remaining peers', async () => {
   await setup();
-  await send({ type: 'roster', peers: ['peer-A', 'peer-B'] });
+  await send({ type: 'roster', peers: [
+    { peerId: 'peer-A', nickname: 'Tiger' },
+    { peerId: 'peer-B', nickname: 'Bear' },
+  ]});
   await send({ type: 'leave', peerId: 'peer-A' });
 
   const closed = peers.filter(p => p.connectionState === 'closed');
   const open   = peers.filter(p => p.connectionState !== 'closed');
   expect(closed).toHaveLength(1);
   expect(open).toHaveLength(1);
+});
+
+// ── Nickname tests ────────────────────────────────────────────────────────────
+
+test('nickname entry screen appears before room connects', async () => {
+  renderRoom();
+  expect(await screen.findByPlaceholderText(/nickname/i)).toBeInTheDocument();
+  expect(ws).toBeNull(); // WS must not be created until nickname is confirmed
+});
+
+test('join button is disabled when nickname input is empty', async () => {
+  renderRoom();
+  await screen.findByPlaceholderText(/nickname/i);
+  const btn = screen.getByRole('button', { name: /enter a nickname/i });
+  expect(btn).toBeDisabled();
+});
+
+test('randomize button fills the nickname input with a non-empty string', async () => {
+  renderRoom();
+  await screen.findByPlaceholderText(/nickname/i);
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: /randomize/i }));
+  });
+  expect(screen.getByPlaceholderText(/nickname/i).value).not.toBe('');
+});
+
+test('join message includes nickname', async () => {
+  renderRoom();
+  const input = await screen.findByPlaceholderText(/nickname/i);
+  await act(async () => { fireEvent.change(input, { target: { value: 'Narwhal' } }); });
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: /join as narwhal/i }));
+    await new Promise(r => setTimeout(r, 0));
+  });
+  await waitForWs();
+  const sent = [];
+  ws.send = (raw) => sent.push(JSON.parse(raw));
+  await act(async () => {
+    ws.emit('open', {});
+    await new Promise(r => setTimeout(r, 0));
+  });
+  const joinMsg = sent.find(m => m.type === 'join');
+  expect(joinMsg).toBeDefined();
+  expect(joinMsg.nickname).toBe('Narwhal');
+});
+
+test('roster peers with nickname objects create connections for each', async () => {
+  await setup();
+  await send({ type: 'roster', peers: [
+    { peerId: 'peer-A', nickname: 'Axolotl' },
+    { peerId: 'peer-B', nickname: 'Capybara' },
+  ]});
+  expect(peers.length).toBe(2);
 });

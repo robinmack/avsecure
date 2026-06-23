@@ -3,8 +3,77 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { v4 as uuidv4 } from 'uuid';
 import { QRCodeCanvas } from 'qrcode.react';
 
+const NOUNS = [
+  'Albatross', 'Axolotl', 'Badger', 'Binturong', 'Capybara',
+  'Caracal', 'Chinchilla', 'Dingo', 'Dormouse', 'Echidna',
+  'Flamingo', 'Gecko', 'Hedgehog', 'Jackalope', 'Jerboa',
+  'Kinkajou', 'Lemur', 'Manatee', 'Meerkat', 'Narwhal',
+  'Ocelot', 'Okapi', 'Pangolin', 'Platypus', 'Quokka',
+  'Salamander', 'Tapir', 'Uakari', 'Wallaby', 'Zorilla',
+  'Avocado', 'Brisket', 'Churro', 'Dumpling', 'Empanada',
+  'Focaccia', 'Gumbo', 'Hummus', 'Jambalaya', 'Kimchi',
+  'Mochi', 'Onigiri', 'Pierogi', 'Pretzel', 'Ramen',
+  'Sourdough', 'Tabbouleh', 'Tempura', 'Waffle', 'Yakitori',
+  'Astronaut', 'Beekeeper', 'Cartographer', 'Detective', 'Falconer',
+  'Glassblower', 'Herbalist', 'Illusionist', 'Locksmith', 'Mapmaker',
+  'Navigator', 'Origamist', 'Sculptor', 'Tinker', 'Voyager',
+];
+
+const NicknameEntry = ({ onConfirm }) => {
+  const [name, setName] = useState('');
+
+  const randomize = () => {
+    setName(NOUNS[Math.floor(Math.random() * NOUNS.length)]);
+  };
+
+  const trimmed = name.trim();
+
+  return (
+    <div className="flex flex-col items-center justify-center min-h-[60vh]">
+      <div className="w-full max-w-sm flex flex-col gap-5 p-8 rounded-2xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 shadow-xl">
+        <h2 className="text-lg font-semibold text-center text-gray-900 dark:text-gray-100">
+          What's your name for this chat?
+        </h2>
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={name}
+            onChange={e => setName(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter' && trimmed) onConfirm(trimmed); }}
+            placeholder="Type a nickname..."
+            maxLength={24}
+            autoFocus
+            className="flex-1 px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-teal-500"
+          />
+          <button
+            onClick={randomize}
+            aria-label="Randomize"
+            title="Pick a random nickname"
+            className="px-3 py-2 rounded-lg bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-base transition-colors"
+          >
+            🎲
+          </button>
+        </div>
+        <button
+          disabled={!trimmed}
+          onClick={() => trimmed && onConfirm(trimmed)}
+          className={`w-full py-2.5 rounded-lg font-medium text-sm transition-colors ${
+            trimmed
+              ? 'bg-teal-600 hover:bg-teal-700 text-white cursor-pointer'
+              : 'bg-gray-100 dark:bg-gray-800 text-gray-400 cursor-not-allowed'
+          }`}
+        >
+          {trimmed ? `Join as ${trimmed}` : 'Enter a nickname to join'}
+        </button>
+      </div>
+    </div>
+  );
+};
+
 const REOFFER_TIMEOUT    = 20000;
 const MAX_ICE_CANDIDATES = 50;
+
+const L = (...a) => console.log('[AV]', ...a);
 
 const TURN_USERNAME   = process.env.REACT_APP_TURN_USERNAME;
 const TURN_CREDENTIAL = process.env.REACT_APP_TURN_CREDENTIAL;
@@ -26,7 +95,7 @@ const ICE_SERVERS = [
 const gridCols = n => (n <= 1 ? 1 : n <= 4 ? 2 : n <= 6 ? 3 : 4);
 
 // Remote peer video tile — assigns srcObject via effect to avoid re-renders on unrelated state
-const RemoteVideo = ({ stream }) => {
+const RemoteVideo = ({ stream, name }) => {
   const ref = useRef();
   useEffect(() => {
     if (ref.current && stream) ref.current.srcObject = stream;
@@ -34,6 +103,11 @@ const RemoteVideo = ({ stream }) => {
   return (
     <div className="relative aspect-video bg-gray-800 rounded-xl overflow-hidden">
       <video playsInline autoPlay ref={ref} className="w-full h-full object-cover block" />
+      {name && (
+        <div className="absolute top-0 inset-x-0 text-center pt-1 pb-3 bg-gradient-to-b from-black/60 to-transparent pointer-events-none">
+          <span className="text-sm font-medium text-white drop-shadow">{name}</span>
+        </div>
+      )}
     </div>
   );
 };
@@ -44,6 +118,9 @@ const Room = () => {
   const userVideo  = useRef();
   const userStream = useRef();
   const wsRef      = useRef();
+
+  // Nickname gate — null until the user picks one on the entry screen
+  const [nickname, setNickname] = useState(null);
 
   // Stable peer ID for this session
   const ownPeerId = useRef(uuidv4());
@@ -56,6 +133,7 @@ const Room = () => {
 
   // Causes re-render only when the participant list visibly changes
   const [remoteStreams, setRemoteStreams] = useState(new Map()); // remotePeerId → MediaStream
+  const [nicknames,    setNicknames]    = useState(new Map()); // remotePeerId → nickname string
 
   const [status,   setStatus]   = useState('Waiting for peer…');
   const [cameraOn, setCameraOn] = useState(true);
@@ -74,9 +152,11 @@ const Room = () => {
     peer.onnegotiationneeded = () => handleNegotiationNeededFor(remotePeerId);
     peer.onicecandidate      = (e) => handleIceCandidateFor(remotePeerId, e);
     peer.ontrack             = (e) => {
+      L('ontrack ←', remotePeerId, e.streams[0]?.id);
       setRemoteStreams(prev => { const m = new Map(prev); m.set(remotePeerId, e.streams[0]); return m; });
     };
     peer.onconnectionstatechange = () => {
+      L('connState', remotePeerId, peer.connectionState);
       if (peer.connectionState === 'connected') {
         if (!connectedAt.current) connectedAt.current = Date.now();
         setStatus('Connected');
@@ -105,14 +185,16 @@ const Room = () => {
   const handleNegotiationNeededFor = async (remotePeerId) => {
     try {
       const peer = peersRef.current.get(remotePeerId);
-      if (!peer || peer.signalingState !== 'stable') return;
+      if (!peer || peer.signalingState !== 'stable') { L('onneg skip', remotePeerId, peer?.signalingState); return; }
+      L('onneg → offer to', remotePeerId);
       const offer = await peer.createOffer();
-      if (peer.signalingState !== 'stable') return; // lost the race after await
+      if (peer.signalingState !== 'stable') { L('onneg race lost for', remotePeerId, peer.signalingState); return; }
       await peer.setLocalDescription(offer);
       wsRef.current.send(JSON.stringify({
         type: 'offer', offer: peer.localDescription,
         from: ownPeerId.current, to: remotePeerId,
       }));
+      L('offer sent →', remotePeerId);
       const old = reofferTimers.current.get(remotePeerId);
       if (old) clearTimeout(old);
       reofferTimers.current.set(remotePeerId,
@@ -132,6 +214,7 @@ const Room = () => {
 
   // We are the offerer — create a connection and add tracks; onnegotiationneeded fires automatically
   const callPeer = (remotePeerId) => {
+    L('callPeer →', remotePeerId);
     const peer = createPeerFor(remotePeerId);
     userStream.current.getTracks().forEach(t => peer.addTrack(t, userStream.current));
     setStatus('Calling peer…');
@@ -139,6 +222,7 @@ const Room = () => {
 
   // We are the answerer — respond to an incoming offer
   const handleOfferFrom = async (remotePeerId, offer) => {
+    L('offer ← ', remotePeerId, offer?.type);
     // Reuse an existing connection when a re-offer arrives; creating a new one
     // would orphan the established stream and invalidate in-flight ICE candidates.
     const existing = peersRef.current.get(remotePeerId);
@@ -159,6 +243,7 @@ const Room = () => {
       type: 'answer', answer: peer.localDescription,
       from: ownPeerId.current, to: remotePeerId,
     }));
+    L('answer sent →', remotePeerId);
     const tid = reofferTimers.current.get(remotePeerId);
     if (tid) { clearTimeout(tid); reofferTimers.current.delete(remotePeerId); }
     setStatus('Connected');
@@ -173,6 +258,7 @@ const Room = () => {
     if (tid) clearTimeout(tid);
     reofferTimers.current.delete(remotePeerId);
     setRemoteStreams(prev => { const m = new Map(prev); m.delete(remotePeerId); return m; });
+    setNicknames(prev => { const m = new Map(prev); m.delete(remotePeerId); return m; });
   };
 
   const closeAllPeers = () => {
@@ -226,6 +312,7 @@ const Room = () => {
   // ── Main effect: WebSocket + signaling ───────────────────────────────────
 
   useEffect(() => {
+    if (!nickname) return;
     const id = location.pathname.split('/')[2];
     if (!/^[a-zA-Z0-9_-]+$/.test(id)) { navigate('/'); return; }
     setRoomId(id);
@@ -235,7 +322,7 @@ const Room = () => {
       wsRef.current = ws;
 
       ws.addEventListener('open', () => {
-        ws.send(JSON.stringify({ type: 'join', peerId: ownPeerId.current }));
+        ws.send(JSON.stringify({ type: 'join', peerId: ownPeerId.current, nickname }));
       });
 
       ws.addEventListener('message', async (e) => {
@@ -244,13 +331,22 @@ const Room = () => {
           if (!['join', 'leave', 'offer', 'answer', 'iceCandidate', 'roster'].includes(msg.type)) return;
 
           if (msg.type === 'roster') {
-            // We just joined — send offers to all existing peers
-            for (const remotePeerId of (msg.peers || [])) callPeer(remotePeerId);
+            L('roster:', msg.peers);
+            // We just joined — send offers to all existing peers; store their nicknames
+            const ns = new Map();
+            for (const peer of (msg.peers || [])) {
+              ns.set(peer.peerId, peer.nickname || '');
+              callPeer(peer.peerId);
+            }
+            setNicknames(prev => { const m = new Map(prev); ns.forEach((v, k) => m.set(k, v)); return m; });
             return;
           }
 
           if (msg.type === 'join') {
-            // A new peer joined after us; they will offer us — no action needed
+            // A new peer joined after us; store their nickname — they will offer us
+            if (msg.nickname) {
+              setNicknames(prev => { const m = new Map(prev); m.set(msg.peerId, msg.nickname); return m; });
+            }
             return;
           }
 
@@ -260,13 +356,14 @@ const Room = () => {
           }
 
           if (msg.type === 'answer') {
+            L('answer ←', msg.from);
             const peer = peersRef.current.get(msg.from);
             if (peer) {
               await peer.setRemoteDescription(new RTCSessionDescription(msg.answer));
               await drainIceBuf(msg.from, peer);
               const tid = reofferTimers.current.get(msg.from);
               if (tid) { clearTimeout(tid); reofferTimers.current.delete(msg.from); }
-            }
+            } else { L('answer: no peer for', msg.from); }
             return;
           }
 
@@ -294,9 +391,12 @@ const Room = () => {
       userStream.current?.getTracks().forEach(t => t.stop());
       wsRef.current?.close();
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [nickname]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Render ────────────────────────────────────────────────────────────────
+
+  // Show nickname entry screen until user picks a name
+  if (!nickname) return <NicknameEntry onConfirm={setNickname} />;
 
   const statusColor =
     status === 'Connected'               ? 'text-green-500 dark:text-green-400' :
@@ -343,12 +443,14 @@ const Room = () => {
         {/* Self-view */}
         <div className="relative aspect-video bg-gray-800 rounded-xl overflow-hidden">
           <video playsInline autoPlay muted ref={userVideo} className="w-full h-full object-cover block" />
-          <span className="absolute bottom-1 left-2 text-xs text-white/60">You</span>
+          <div className="absolute top-0 inset-x-0 text-center pt-1 pb-3 bg-gradient-to-b from-black/60 to-transparent pointer-events-none">
+            <span className="text-sm font-medium text-white drop-shadow">{nickname} (you)</span>
+          </div>
         </div>
 
         {/* Remote peers — one tile per participant */}
         {[...remoteStreams.entries()].map(([pid, stream]) => (
-          <RemoteVideo key={pid} stream={stream} />
+          <RemoteVideo key={pid} stream={stream} name={nicknames.get(pid) || ''} />
         ))}
       </div>
 
