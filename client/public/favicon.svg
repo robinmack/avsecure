@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <!-- Background disc -->
+  <circle cx="50" cy="50" r="50" fill="#1e3a5f"/>
+
+  <!-- Left person (whisperer) - head + body, leaning right -->
+  <g transform="rotate(-12 36 50)">
+    <circle cx="36" cy="34" r="10" fill="#93c5fd"/>
+    <ellipse cx="36" cy="57" rx="12" ry="9" fill="#93c5fd"/>
+  </g>
+
+  <!-- Right person (listener) - head + body -->
+  <circle cx="64" cy="36" r="10" fill="#bfdbfe"/>
+  <ellipse cx="64" cy="59" rx="12" ry="9" fill="#bfdbfe"/>
+
+  <!-- Whisper arcs near listener's ear (left side of right head) -->
+  <path d="M 51 33 Q 48 29 51 25" stroke="#60a5fa" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+  <path d="M 53 35 Q 49 29 53 23" stroke="#60a5fa" stroke-width="2"   fill="none" stroke-linecap="round"/>
+  <path d="M 55 37 Q 50 29 55 21" stroke="#60a5fa" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+</svg>

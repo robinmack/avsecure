@@ -1,0 +1,14 @@
+[Unit]
+Description=AVSecure WebRTC signaling server
+After=network.target
+
+[Service]
+Type=simple
+User=ratwood
+WorkingDirectory=/home/ratwood/workspace/go-react-WebRTC
+ExecStart=/home/ratwood/workspace/go-react-WebRTC/go-react-webrtc-linux
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

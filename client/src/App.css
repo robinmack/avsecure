@@ -1,0 +1,4 @@
+/* Global overrides beyond Tailwind */
+html, body, #root {
+  height: 100%;
+}

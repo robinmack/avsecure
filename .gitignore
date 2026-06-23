@@ -1,0 +1,20 @@
+# Build artifacts
+go-react-webrtc
+go-react-webrtc-linux
+client/build/
+
+# Dependencies
+client/node_modules/
+
+# Environment — never commit real credentials
+client/.env
+
+# Runtime data
+stats.db
+
+# OS
+.DS_Store
+
+# Backup files
+*.bak
+*.orig
