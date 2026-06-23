@@ -36,7 +36,7 @@ const IndexPage = () => {
       <div className="text-center max-w-2xl">
         <h1 className="text-4xl font-bold tracking-tight mb-3">
           Secure video calls,{' '}
-          <span className="text-blue-600 dark:text-blue-400">end-to-end encrypted</span>
+          <span className="text-teal-600 dark:text-teal-400">end-to-end encrypted</span>
         </h1>
         <p className="text-gray-500 dark:text-gray-400 text-lg">
           No accounts. No data stored. Just share a room link and connect.
@@ -55,7 +55,7 @@ const IndexPage = () => {
           <button
             onClick={create}
             disabled={creating}
-            className="mt-auto w-full py-2.5 px-4 rounded-lg bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-medium transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+            className="mt-auto w-full py-2.5 px-4 rounded-lg bg-teal-600 hover:bg-teal-700 active:bg-teal-800 text-white font-medium transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
           >
             {creating ? 'Creating…' : 'Create Room'}
           </button>
@@ -72,11 +72,11 @@ const IndexPage = () => {
             <input
               ref={roomRef}
               placeholder="Room ID"
-              className="w-full px-4 py-2.5 rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
+              className="w-full px-4 py-2.5 rounded-lg border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-teal-500 transition"
             />
             <button
               type="submit"
-              className="w-full py-2.5 px-4 rounded-lg border border-blue-600 text-blue-600 dark:text-blue-400 dark:border-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950 font-medium transition-colors"
+              className="w-full py-2.5 px-4 rounded-lg border border-teal-600 text-teal-600 dark:text-teal-400 dark:border-teal-400 hover:bg-teal-50 dark:hover:bg-teal-950 font-medium transition-colors"
             >
               Join Room
             </button>
@@ -88,9 +88,12 @@ const IndexPage = () => {
       <p className="text-xs text-gray-400 dark:text-gray-600 text-center max-w-md">
         All calls are peer-to-peer and encrypted. We do not store video, audio, or any personal data.
       </p>
-      <p className="text-xs text-gray-300 dark:text-gray-700 text-center">
-        A <span className="font-medium text-gray-400 dark:text-gray-500">Macklepenny Movement</span> project
-      </p>
+
+      <img
+        src="/macklepenny-movement.svg"
+        alt="Macklepenny Movement — Building bridges together"
+        className="w-64 opacity-80 hover:opacity-100 transition-opacity"
+      />
     </div>
   );
 };

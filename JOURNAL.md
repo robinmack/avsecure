@@ -149,6 +149,22 @@ Added `LICENSE` (MIT, Copyright 2026 Robin Macklepenny). Chosen for maximum perm
 
 ---
 
+## 2026-06-23 — Session 5: Public repo, Macklepenny logo, teal palette
+
+### Public GitHub repo
+
+Renamed `robinmack/avsecure` (private, dirty history) to `robinmack/avsecure-private`. Created a fresh `robinmack/avsecure` public repo with a single squashed commit — no old TURN credentials in history. Working directory remote updated to point at the new public repo.
+
+### Macklepenny Movement logo
+
+Added `client/public/macklepenny-movement.svg` (bridge icon + wordmark + "Building bridges together" motto). Displayed in the footer of both `IndexPage.jsx` and `Rooms.jsx` with a subtle opacity hover effect.
+
+### Teal colour palette
+
+Replaced all `blue-*` Tailwind classes with `teal-*` across `App.jsx`, `IndexPage.jsx`, and `Rooms.jsx` to match the deep teal (`#022f33`) of the Macklepenny Movement logo. Updated `theme-color` meta tag in `index.html` from `#1e3a5f` to `#022f33`.
+
+---
+
 ## 2026-06-23 — Session 4: TURN credentials, README, open-source prep
 
 ### Security: TURN credentials moved out of source

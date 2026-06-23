@@ -354,6 +354,12 @@ const Room = () => {
         End-to-end encrypted · No data stored · Peer-to-peer · Up to 8 participants
       </p>
 
+      <img
+        src="/macklepenny-movement.svg"
+        alt="Macklepenny Movement — Building bridges together"
+        className="w-56 opacity-60 hover:opacity-90 transition-opacity"
+      />
+
       {/* ── QR code modal ── */}
       {showQR && (() => {
         const roomURL = `https://avsecure.vip/room/${roomId}`;
@@ -390,7 +396,7 @@ const Room = () => {
                 </button>
                 <button
                   onClick={downloadQR}
-                  className="flex-1 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium transition-colors"
+                  className="flex-1 py-2 rounded-lg bg-teal-600 hover:bg-teal-700 text-white text-sm font-medium transition-colors"
                 >
                   Save QR
                 </button>

@@ -69,7 +69,7 @@ function StatsModal({ onClose }) {
 
         {!stats && !error && (
           <div className="flex justify-center py-8">
-            <div className="h-6 w-6 rounded-full border-2 border-blue-500 border-t-transparent animate-spin" />
+            <div className="h-6 w-6 rounded-full border-2 border-teal-500 border-t-transparent animate-spin" />
           </div>
         )}
 
@@ -107,9 +107,9 @@ function StatsModal({ onClose }) {
             </div>
 
             {/* Security blurb */}
-            <div className="rounded-xl bg-blue-50 dark:bg-blue-950/40 border border-blue-100 dark:border-blue-900 p-4">
-              <p className="text-xs font-semibold text-blue-700 dark:text-blue-400 mb-1">🔒 How your call is protected</p>
-              <p className="text-xs text-blue-600 dark:text-blue-500 leading-relaxed">
+            <div className="rounded-xl bg-teal-50 dark:bg-teal-950/40 border border-teal-100 dark:border-teal-900 p-4">
+              <p className="text-xs font-semibold text-teal-700 dark:text-teal-400 mb-1">🔒 How your call is protected</p>
+              <p className="text-xs text-teal-600 dark:text-teal-500 leading-relaxed">
                 All video and audio is encrypted with <strong>DTLS-SRTP</strong> — the same standard used by Signal and WhatsApp.
                 Encryption keys are negotiated directly between browsers and never touch our server.
                 We store no video, audio, IP addresses, or room IDs. The only data we record is call count and duration.
@@ -144,7 +144,7 @@ function App() {
           <div className="flex items-center gap-2">
             <span className="text-2xl">🔒</span>
             <span className="font-semibold text-lg tracking-tight">AVSecure</span>
-            <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 ml-1">BETA</span>
+            <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-teal-100 dark:bg-teal-900 text-teal-700 dark:text-teal-300 ml-1">BETA</span>
           </div>
           <div className="flex items-center gap-2">
             {/* Stats button */}
