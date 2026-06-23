@@ -105,8 +105,9 @@ const Room = () => {
   const handleNegotiationNeededFor = async (remotePeerId) => {
     try {
       const peer = peersRef.current.get(remotePeerId);
-      if (!peer) return;
+      if (!peer || peer.signalingState !== 'stable') return;
       const offer = await peer.createOffer();
+      if (peer.signalingState !== 'stable') return; // lost the race after await
       await peer.setLocalDescription(offer);
       wsRef.current.send(JSON.stringify({
         type: 'offer', offer: peer.localDescription,
@@ -138,10 +139,20 @@ const Room = () => {
 
   // We are the answerer — respond to an incoming offer
   const handleOfferFrom = async (remotePeerId, offer) => {
-    const peer = createPeerFor(remotePeerId);
+    // Reuse an existing connection when a re-offer arrives; creating a new one
+    // would orphan the established stream and invalidate in-flight ICE candidates.
+    const existing = peersRef.current.get(remotePeerId);
+    const peer = existing ?? createPeerFor(remotePeerId);
+    if (!existing) {
+      // Answerer must never send a counter-offer — addTrack fires onnegotiationneeded
+      // which would create an offer glare loop that breaks all three participants.
+      peer.onnegotiationneeded = null;
+    }
     await peer.setRemoteDescription(new RTCSessionDescription(offer));
     await drainIceBuf(remotePeerId, peer); // apply any candidates that raced the offer
-    userStream.current.getTracks().forEach(t => peer.addTrack(t, userStream.current));
+    if (!existing) {
+      userStream.current.getTracks().forEach(t => peer.addTrack(t, userStream.current));
+    }
     const answer = await peer.createAnswer();
     await peer.setLocalDescription(answer);
     wsRef.current.send(JSON.stringify({

@@ -197,6 +197,36 @@ test('multiple buffered ICE candidates are all drained after answer', async () =
   expect(peers[0]._candidates).toHaveLength(3);
 });
 
+test('answerer never sends a re-offer after answering (no spurious onnegotiationneeded)', async () => {
+  await setup();
+
+  const sent = [];
+  ws.send = (raw) => sent.push(JSON.parse(raw));
+
+  // Receive an offer — we are the answerer
+  await send({ type: 'offer', from: 'peer-A', offer: { type: 'offer', sdp: 'sdp-A' } });
+
+  // Wait long enough for any spurious onnegotiationneeded to fire and send a message
+  await act(async () => { await new Promise(r => setTimeout(r, 50)); });
+
+  const offers = sent.filter(m => m.type === 'offer');
+  expect(offers).toHaveLength(0); // answerer must never send an offer back
+});
+
+test('re-offer from remote peer reuses existing connection instead of discarding it', async () => {
+  await setup();
+
+  // First offer — establishes connection
+  await send({ type: 'offer', from: 'peer-A', offer: { type: 'offer', sdp: 'sdp-A-v1' } });
+  expect(peers.length).toBe(1);
+  const firstPeer = peers[0];
+
+  // Second offer from the same peer — should reuse, not discard
+  await send({ type: 'offer', from: 'peer-A', offer: { type: 'offer', sdp: 'sdp-A-v2' } });
+  expect(peers.length).toBe(1); // no new peer created
+  expect(peers[0]).toBe(firstPeer); // exact same instance
+});
+
 test('leaving peer closes its connection without affecting remaining peers', async () => {
   await setup();
   await send({ type: 'roster', peers: ['peer-A', 'peer-B'] });

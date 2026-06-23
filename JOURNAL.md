@@ -183,6 +183,31 @@ The original README was a scratchpad with an expired cert date and outdated note
 
 ---
 
+## 2026-06-23 — Session 6: Offer-glare fix (3-participant bug)
+
+### Root cause
+
+When a third peer (C) joined a room where A and B were already connected, all three peers dropped to seeing only themselves. Two compounding bugs:
+
+1. **Spurious re-offer from answerer.** In `handleOfferFrom`, calling `addTrack` on the answerer's peer connection fires `onnegotiationneeded`. After `setLocalDescription(answer)` returns the signaling state to `'stable'`, this queued event fires `handleNegotiationNeededFor`, which sends a fresh offer back to the original offerer — the "offer glare" anti-pattern.
+
+2. **`createPeerFor` discards working connections.** When C received A's spurious re-offer, `handleOfferFrom` called `createPeerFor(A_uuid)` unconditionally. This overwrote and orphaned the already-established C↔A peer connection, invalided in-flight ICE candidates, and caused all three participants to lose their streams.
+
+### Fix (TDD — tests written first, then implementation)
+
+Two new failing tests:
+- `answerer never sends a re-offer after answering (no spurious onnegotiationneeded)` — verified A sends no offer after answering C
+- `re-offer from remote peer reuses existing connection instead of discarding it` — verified the same `RTCPeerConnection` instance is used on re-offer
+
+Implementation changes in `Rooms.jsx`:
+
+- **`handleNegotiationNeededFor`**: Added `peer.signalingState !== 'stable'` guard (two checks — before and after the async `createOffer`) to prevent offers during active negotiation.
+- **`handleOfferFrom`**: Reuses `peersRef.current.get(remotePeerId)` if a connection already exists. On first offer (`!existing`), sets `peer.onnegotiationneeded = null` to suppress spurious counter-offers from the answerer side, and calls `addTrack`. On re-offers, skips both (tracks already present, no new negotiation trigger).
+
+All 7 tests pass after the fix.
+
+---
+
 ## 2026-06-23 — Session 3: Author credit
 
 Added "A Macklepenny Movement project" credit to the footer of the landing page (`client/src/components/IndexPage.jsx`). Displayed in a subtle muted style beneath the privacy note.
