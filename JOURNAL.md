@@ -183,6 +183,30 @@ The original README was a scratchpad with an expired cert date and outdated note
 
 ---
 
+## 2026-06-23 — Session 7: Secure secrets storage
+
+### `/etc/avsecure/secrets` (layered credential lookup)
+
+TURN credentials were previously stored only in `client/.env` (gitignored but world-readable by default). Moved to a system-level file outside the project tree with restrictive permissions (`chmod 600`, owned by the deploy user). `client/.env` is retained as a fallback for local development.
+
+`build.sh` now checks in priority order:
+1. `/etc/avsecure/secrets` — recommended for production servers
+2. `client/.env` — fallback for local dev
+
+Error message clearly explains both options if neither file is found.
+
+Setup for new server deployments:
+```bash
+sudo mkdir -p /etc/avsecure
+sudo cp client/.env.example /etc/avsecure/secrets
+sudo chmod 600 /etc/avsecure/secrets
+sudo chown $(whoami):$(whoami) /etc/avsecure/secrets
+```
+
+README updated with both options under "Configure the frontend."
+
+---
+
 ## 2026-06-23 — Session 6: Offer-glare fix (3-participant bug)
 
 ### Root cause

@@ -53,18 +53,35 @@ Other providers: [Twilio](https://www.twilio.com/stun-turn), [Xirsys](https://xi
 
 ### Configure the frontend
 
+Credentials are baked into the JavaScript bundle at build time by CRA. `build.sh` checks two locations in order:
+
+**Option A — production server (recommended)**
+
+Store credentials outside the project tree, owned by your deploy user only:
+
 ```bash
-cp client/.env.example client/.env
+sudo mkdir -p /etc/avsecure
+sudo cp client/.env.example /etc/avsecure/secrets
+sudo chmod 600 /etc/avsecure/secrets
+sudo chown $(whoami):$(whoami) /etc/avsecure/secrets
 ```
 
-Edit `client/.env`:
+Edit `/etc/avsecure/secrets`:
 
 ```
 REACT_APP_TURN_USERNAME=your_turn_username_here
 REACT_APP_TURN_CREDENTIAL=your_turn_credential_here
 ```
 
-`client/.env` is gitignored — your credentials will never be committed.
+`build.sh` sources this file automatically when it exists. No risk of the file appearing in git history regardless of future `.gitignore` changes.
+
+**Option B — local development**
+
+```bash
+cp client/.env.example client/.env
+```
+
+Edit `client/.env` with your credentials. `client/.env` is gitignored — credentials will not be committed. `build.sh` falls back to this file when `/etc/avsecure/secrets` is absent.
 
 ---
 
