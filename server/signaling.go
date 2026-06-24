@@ -4,9 +4,34 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/gorilla/websocket"
 )
+
+const (
+	maxNicknameLen  = 24
+	maxMessageBytes = 65536 // 64 KB — generous for SDP, blocks message bombs
+)
+
+// sanitizeNickname trims whitespace and enforces the rune-count limit.
+func sanitizeNickname(s string) string {
+	s = strings.TrimSpace(s)
+	if runes := []rune(s); len(runes) > maxNicknameLen {
+		s = string(runes[:maxNicknameLen])
+	}
+	return s
+}
+
+// isRelayableType returns true only for message types the server should forward
+// between peers. Anything else (ping, join, unknown) is dropped at the relay layer.
+func isRelayableType(t string) bool {
+	switch t {
+	case "offer", "answer", "iceCandidate":
+		return true
+	}
+	return false
+}
 
 var (
 	AllRooms  RoomMap
@@ -117,6 +142,7 @@ func JoinRoomRequestHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer ws.Close()
+	ws.SetReadLimit(maxMessageBytes)
 
 	// Read the initial join handshake to learn this peer's self-assigned ID.
 	var joinMsg map[string]interface{}
@@ -133,7 +159,8 @@ func JoinRoomRequestHandler(w http.ResponseWriter, r *http.Request) {
 			websocket.FormatCloseMessage(websocket.CloseUnsupportedData, "missing peerId"))
 		return
 	}
-	nickname, _ := joinMsg["nickname"].(string)
+	nicknameRaw, _ := joinMsg["nickname"].(string)
+	nickname := sanitizeNickname(nicknameRaw)
 	if nickname == "" {
 		nickname = "Anonymous"
 	}
@@ -180,9 +207,16 @@ func JoinRoomRequestHandler(w http.ResponseWriter, r *http.Request) {
 		// Every message from an active client keeps the room alive.
 		AllRooms.Touch(roomID)
 
+		msgType, _ := msg["type"].(string)
+
 		// Ping/pong: client heartbeat to maintain room TTL; not relayed.
-		if msgType, _ := msg["type"].(string); msgType == "ping" {
+		if msgType == "ping" {
 			ws.WriteJSON(map[string]interface{}{"type": "pong"})
+			continue
+		}
+
+		// Only relay the three signaling message types; drop everything else.
+		if !isRelayableType(msgType) {
 			continue
 		}
 

@@ -33,6 +33,22 @@ This file is the running logbook for the project. Update it before every major c
 
 ---
 
+## 2026-06-24 — Session 10 (cont): Input validation hardening
+
+### Server-side input guards (`server/signaling.go`)
+
+Three gaps closed:
+
+1. **Nickname length** — `sanitizeNickname(s)`: trims whitespace, truncates to 24 runes (not bytes — correct for multi-byte Unicode/emoji). Client-side `maxLength={24}` was already enforced in the browser; this adds the server-side equivalent so a crafted client can't inject arbitrarily long nicknames.
+
+2. **WebSocket message size** — `ws.SetReadLimit(65536)` (64 KB) set immediately after upgrade. A single SDP is at most ~15 KB; 64 KB gives 4× headroom while making message-bomb attacks impossible.
+
+3. **Relay type allowlist** — `isRelayableType(t)` returns true only for `offer`, `answer`, `iceCandidate`. The relay loop drops any other type silently. Prevents a crafted client from injecting forged `leave`, `roster`, `join`, or arbitrary messages to other participants.
+
+**TDD:** 6 new server tests (`TestSanitizeNickname_*`, `TestIsRelayableType_*`); all pass with `-race`.
+
+---
+
 ## 2026-06-24 — Session 10: Persistent rooms with activity-based TTL + client heartbeat
 
 ### Persistent rooms

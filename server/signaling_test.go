@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -188,6 +189,62 @@ func TestCreateRoomRequestHandler_UniqueIDsOnMultipleCalls(t *testing.T) {
 			t.Errorf("duplicate room_id returned: %q", resp.RoomID)
 		}
 		ids[resp.RoomID] = true
+	}
+}
+
+// ── sanitizeNickname ──────────────────────────────────────────────────────────
+
+func TestSanitizeNickname_TruncatesLongNickname(t *testing.T) {
+	long := strings.Repeat("a", maxNicknameLen+10)
+	got := sanitizeNickname(long)
+	if len([]rune(got)) > maxNicknameLen {
+		t.Errorf("expected max %d runes, got %d", maxNicknameLen, len([]rune(got)))
+	}
+}
+
+func TestSanitizeNickname_TrimsWhitespace(t *testing.T) {
+	if got := sanitizeNickname("  Alice  "); got != "Alice" {
+		t.Errorf("want %q, got %q", "Alice", got)
+	}
+}
+
+func TestSanitizeNickname_HandlesUnicode(t *testing.T) {
+	// 5 Japanese runes = 15 bytes — must count runes, not bytes
+	name := "こんにちは"
+	got := sanitizeNickname(name)
+	if len([]rune(got)) != 5 {
+		t.Errorf("want 5 runes, got %d", len([]rune(got)))
+	}
+}
+
+func TestSanitizeNickname_TruncatesLongUnicode(t *testing.T) {
+	// 30 emoji, each multi-byte — truncation must still work correctly
+	long := strings.Repeat("🦊", maxNicknameLen+6)
+	got := sanitizeNickname(long)
+	if len([]rune(got)) > maxNicknameLen {
+		t.Errorf("expected max %d runes, got %d", maxNicknameLen, len([]rune(got)))
+	}
+}
+
+// ── isRelayableType ───────────────────────────────────────────────────────────
+
+func TestIsRelayableType_AllowsSignalingMessages(t *testing.T) {
+	for _, typ := range []string{"offer", "answer", "iceCandidate"} {
+		if !isRelayableType(typ) {
+			t.Errorf("expected %q to be relayable", typ)
+		}
+	}
+}
+
+func TestIsRelayableType_BlocksNonSignalingTypes(t *testing.T) {
+	blocked := []string{
+		"ping", "pong", "join", "roster", "leave", "error", "",
+		"DROP TABLE rooms", "<script>alert(1)</script>",
+	}
+	for _, typ := range blocked {
+		if isRelayableType(typ) {
+			t.Errorf("expected %q to be blocked from relay", typ)
+		}
 	}
 }
 
