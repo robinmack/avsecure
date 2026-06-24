@@ -4,11 +4,20 @@ After=network.target
 
 [Service]
 Type=simple
-User=ratwood
-WorkingDirectory=/home/ratwood/workspace/go-react-WebRTC
-ExecStart=/home/ratwood/workspace/go-react-WebRTC/go-react-webrtc-linux
+User=avsecure
+Group=avsecure
+WorkingDirectory=/opt/avsecure
+ExecStart=/opt/avsecure/go-react-webrtc
 Restart=on-failure
 RestartSec=5
+
+# Systemd hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/avsecure
+PrivateTmp=true
+CapabilityBoundingSet=
 
 [Install]
 WantedBy=multi-user.target
