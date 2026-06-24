@@ -12,6 +12,9 @@ import (
 
 const maxParticipantsPerRoom = 8
 
+// maxRooms is a var (not const) so tests can override it.
+var maxRooms = 1000
+
 // roomTTL is a var (not const) so tests can override it.
 var roomTTL = 4 * time.Hour
 
@@ -38,6 +41,13 @@ type RoomMap struct {
 func (r *RoomMap) Init() {
 	r.Map = make(map[string][]*Participant)
 	r.expiresAt = make(map[string]time.Time)
+}
+
+// AtCapacity returns true when the room count has reached maxRooms.
+func (r *RoomMap) AtCapacity() bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return len(r.Map) >= maxRooms
 }
 
 func (r *RoomMap) Get(roomID string) ([]*Participant, bool) {

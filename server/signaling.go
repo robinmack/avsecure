@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -46,6 +47,11 @@ func CreateRoomRequestHandler(w http.ResponseWriter, r *http.Request) {
 
 	if r.Method == http.MethodOptions {
 		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	if AllRooms.AtCapacity() {
+		http.Error(w, "server at capacity", http.StatusServiceUnavailable)
 		return
 	}
 
@@ -93,6 +99,7 @@ func Broadcaster() {
 					continue
 				}
 				client.Mutex.Lock()
+				client.Conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 				err := client.Conn.WriteJSON(msg.Message)
 				client.Mutex.Unlock()
 				if err != nil {
@@ -110,6 +117,7 @@ func Broadcaster() {
 					continue
 				}
 				client.Mutex.Lock()
+				client.Conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 				err := client.Conn.WriteJSON(msg.Message)
 				client.Mutex.Unlock()
 				if err != nil {

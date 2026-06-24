@@ -2,6 +2,61 @@
 
 ---
 
+## 2026-06-24 — Session 11: Server hardening
+
+### Summary
+
+Full security audit of public-facing server. Seven concrete gaps closed.
+
+### 1. Firewall (UFW)
+
+Previous state: **default policy was ALLOW** — the firewall was effectively off, every port was internet-accessible.
+
+New state: `default deny incoming`. Explicit allow list:
+
+| Port(s) | Access | Purpose |
+|---|---|---|
+| 22/tcp | Anywhere | SSH |
+| 80/tcp | Anywhere | HTTP → HTTPS redirect |
+| 443/tcp | Anywhere | HTTPS |
+| 8443/tcp | Anywhere | WebSocket signaling |
+| Samba (137/138/139/445) | 192.168.0.0/24 only | LAN file sharing |
+| 3000, 8000, 8060, 4000 | 192.168.0.0/24 only | Dev ports, LAN only |
+| 5353/udp | 192.168.0.0/24 only | mDNS, LAN only |
+
+### 2. Go server bind address
+
+Was `*:4242` (all interfaces, internet-accessible, no TLS). Now `127.0.0.1:4242` — loopback only, reachable only through nginx's TLS proxy.
+
+### 3. Dedicated service user
+
+Created `avsecure` system user (no login shell, no home dir, no sudo). Binary moved to `/opt/avsecure/go-react-webrtc`. Systemd hardening directives added: `NoNewPrivileges`, `ProtectSystem=strict`, `ProtectHome=true`, `PrivateTmp=true`, `CapabilityBoundingSet=`.
+
+Deploy workflow: `./deploy-server.sh` (builds, copies to /opt/avsecure/, restarts service).
+
+### 4. HTTP server timeouts (Slowloris mitigation)
+
+Added to `main.go`: `ReadHeaderTimeout: 10s`, `ReadTimeout: 30s`, `IdleTimeout: 120s`.
+
+### 5. WebSocket write deadline
+
+`Broadcaster` goroutine now sets `SetWriteDeadline(now + 10s)` before every `WriteJSON` call. Previously a single unresponsive client could stall message delivery to all other participants indefinitely.
+
+### 6. Room count cap (DoS mitigation)
+
+`var maxRooms = 1000` in `rooms.go`. `AtCapacity()` method on `RoomMap`. `/create` handler returns HTTP 503 when at capacity. TDD: 3 new tests.
+
+### 7. nginx hardening
+
+- `server_tokens off` (hides nginx version)
+- `ssl_protocols TLSv1.2 TLSv1.3` + modern cipher suite
+- Security headers: HSTS (2-year, preload), X-Frame-Options: DENY, X-Content-Type-Options, Referrer-Policy, Permissions-Policy, Content-Security-Policy
+- HTTP → HTTPS redirect on port 80
+- Rate limiting: `/create` 5/min burst 3, `/join` 30/min burst 10 (per source IP)
+- gzip enabled
+
+---
+
 ## 2026-06-24 — Session 9: CRA → Vite migration (0 vulnerabilities)
 
 ### Build tool replaced: react-scripts → Vite

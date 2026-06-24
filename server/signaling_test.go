@@ -170,6 +170,25 @@ func TestCreateRoomRequestHandler_IncrementsRoomsCreated(t *testing.T) {
 	}
 }
 
+func TestCreateRoomRequestHandler_Returns503_WhenAtCapacity(t *testing.T) {
+	old := maxRooms
+	maxRooms = 2
+	defer func() { maxRooms = old }()
+
+	AllRooms.Init()
+	defer freshDB(t)()
+
+	for i := 0; i < 2; i++ {
+		CreateRoomRequestHandler(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/create", nil))
+	}
+
+	rw := httptest.NewRecorder()
+	CreateRoomRequestHandler(rw, httptest.NewRequest(http.MethodGet, "/create", nil))
+	if rw.Code != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want 503", rw.Code)
+	}
+}
+
 func TestCreateRoomRequestHandler_UniqueIDsOnMultipleCalls(t *testing.T) {
 	AllRooms.Init()
 	defer freshDB(t)()

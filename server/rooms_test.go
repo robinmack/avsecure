@@ -428,6 +428,31 @@ func TestGetParticipantIDs_ExcludesRemovedPeer(t *testing.T) {
 	}
 }
 
+// ── RoomMap.AtCapacity / room count cap ──────────────────────────────────────
+
+func TestAtCapacity_FalseWhenEmpty(t *testing.T) {
+	var rm RoomMap
+	rm.Init()
+	if rm.AtCapacity() {
+		t.Error("empty RoomMap should not be at capacity")
+	}
+}
+
+func TestAtCapacity_TrueAfterMaxRooms(t *testing.T) {
+	old := maxRooms
+	maxRooms = 3
+	defer func() { maxRooms = old }()
+
+	var rm RoomMap
+	rm.Init()
+	for i := 0; i < 3; i++ {
+		rm.CreateRoom()
+	}
+	if !rm.AtCapacity() {
+		t.Errorf("should be at capacity after %d rooms", maxRooms)
+	}
+}
+
 // ── RoomMap.Get ─────────────────────────────────────────────────────────────
 
 func TestGet_NotFound(t *testing.T) {
