@@ -1,5 +1,34 @@
 # AVSecure — Change Journal
 
+---
+
+## 2026-06-24 — Session 9: CRA → Vite migration (0 vulnerabilities)
+
+### Build tool replaced: react-scripts → Vite
+
+Migrated from Create React App (`react-scripts@5.0.1`, abandoned since 2022) to Vite 6.
+
+**Result:** 100 → 0 vulnerabilities. 1,223 packages removed; 59 added. dep tree went from ~1,400 to ~286 packages.
+
+**Files changed:**
+- `client/vite.config.js` — new; configures `@vitejs/plugin-react`, `outDir: 'build'` (preserves deploy script), vitest with `jsdom` + `globals: true`
+- `client/index.html` — moved from `public/index.html` to project root; removed `%PUBLIC_URL%` prefix from all asset hrefs; added `<script type="module" src="/src/index.jsx">` entry point
+- `client/package.json` — removed `react-scripts`, `web-vitals`, `@babel/runtime`, all overrides, `jest` section, `eslintConfig` section; added `vite`, `@vitejs/plugin-react`, `vitest`, `jsdom`; scripts: `start → vite`, `build → vite build`, `test → vitest run`
+- `client/src/components/Rooms.jsx` — `process.env.REACT_APP_*` → `import.meta.env.VITE_*`
+- `client/src/components/Rooms.test.jsx` — `jest.fn()` → `vi.fn()` (vitest globals)
+- `client/build.sh` — `REACT_APP_*` → `VITE_*` throughout the credential guard
+- `client/.env.example`, `client/.env`, `/etc/avsecure/secrets`, `README.md` — `REACT_APP_*` → `VITE_*`
+
+**Test runner replaced:** Jest (via react-scripts) → Vitest 3.x. API is Jest-compatible; only change in tests was `jest.fn()` → `vi.fn()` (2 occurrences). All 12 tests pass.
+
+**Build time:** CRA ~30–60s → Vite ~2s.
+
+**Why the overrides block was removed entirely:** All 38 overrides targeted packages that came from `react-scripts`' webpack stack (sockjs, webpack-dev-server, svgo, postcss-old, etc.). None of those packages exist in Vite's dep tree. Running `npm audit` after the migration: `found 0 vulnerabilities`.
+
+**Env var rename:** CRA's `REACT_APP_*` convention (build-time `process.env` injection) replaced by Vite's `VITE_*` convention (accessed as `import.meta.env.VITE_*`). Updated in all credential files including the live `/etc/avsecure/secrets`.
+
+---
+
 This file is the running logbook for the project. Update it before every major commit and push.
 
 ---

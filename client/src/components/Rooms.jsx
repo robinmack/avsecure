@@ -75,8 +75,8 @@ const MAX_ICE_CANDIDATES = 50;
 
 const L = (...a) => console.log('[AV]', ...a);
 
-const TURN_USERNAME   = process.env.REACT_APP_TURN_USERNAME;
-const TURN_CREDENTIAL = process.env.REACT_APP_TURN_CREDENTIAL;
+const TURN_USERNAME   = import.meta.env.VITE_TURN_USERNAME;
+const TURN_CREDENTIAL = import.meta.env.VITE_TURN_CREDENTIAL;
 
 const ICE_SERVERS = [
   { urls: 'stun:stun.l.google.com:19302' },

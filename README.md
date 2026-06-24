@@ -69,8 +69,8 @@ sudo chown $(whoami):$(whoami) /etc/avsecure/secrets
 Edit `/etc/avsecure/secrets`:
 
 ```
-REACT_APP_TURN_USERNAME=your_turn_username_here
-REACT_APP_TURN_CREDENTIAL=your_turn_credential_here
+VITE_TURN_USERNAME=your_turn_username_here
+VITE_TURN_CREDENTIAL=your_turn_credential_here
 ```
 
 `build.sh` sources this file automatically when it exists. No risk of the file appearing in git history regardless of future `.gitignore` changes.

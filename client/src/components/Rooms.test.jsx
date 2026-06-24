@@ -77,7 +77,7 @@ class MockPeer {
 // ── Shared mock stream ────────────────────────────────────────────────────────
 
 const mockStream = {
-  getTracks:      () => [{ kind: 'video', enabled: true, stop: jest.fn() }],
+  getTracks:      () => [{ kind: 'video', enabled: true, stop: vi.fn() }],
   getVideoTracks: () => [{ enabled: true }],
   getAudioTracks: () => [{ enabled: true }],
 };
@@ -95,7 +95,7 @@ beforeEach(() => {
   // Use defineProperty — direct assignment on navigator.mediaDevices silently
   // fails in jsdom after the first test run
   Object.defineProperty(global.navigator, 'mediaDevices', {
-    value: { getUserMedia: jest.fn().mockResolvedValue(mockStream) },
+    value: { getUserMedia: vi.fn().mockResolvedValue(mockStream) },
     configurable: true,
     writable: true,
   });

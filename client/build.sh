@@ -28,24 +28,24 @@ else
 fi
 
 # ── Credential guard ──────────────────────────────────────────────────────────
-if [ -z "$REACT_APP_TURN_USERNAME" ]; then
-  echo "ERROR: REACT_APP_TURN_USERNAME is not set"
+if [ -z "$VITE_TURN_USERNAME" ]; then
+  echo "ERROR: VITE_TURN_USERNAME is not set"
   exit 1
 fi
 
-if [[ "$REACT_APP_TURN_USERNAME" == /* || "$REACT_APP_TURN_USERNAME" == *"/"* ]]; then
-  echo "ERROR: REACT_APP_TURN_USERNAME looks like a file path: $REACT_APP_TURN_USERNAME"
+if [[ "$VITE_TURN_USERNAME" == /* || "$VITE_TURN_USERNAME" == *"/"* ]]; then
+  echo "ERROR: VITE_TURN_USERNAME looks like a file path: $VITE_TURN_USERNAME"
   echo "       Set it to your metered.ca username (a hex string), not a file path."
   exit 1
 fi
 
-if [ -z "$REACT_APP_TURN_CREDENTIAL" ]; then
-  echo "ERROR: REACT_APP_TURN_CREDENTIAL is not set"
+if [ -z "$VITE_TURN_CREDENTIAL" ]; then
+  echo "ERROR: VITE_TURN_CREDENTIAL is not set"
   exit 1
 fi
 
-echo "✓ TURN username:   ${REACT_APP_TURN_USERNAME:0:8}... (${#REACT_APP_TURN_USERNAME} chars)"
-echo "✓ TURN credential: ${REACT_APP_TURN_CREDENTIAL:0:6}... (${#REACT_APP_TURN_CREDENTIAL} chars)"
+echo "✓ TURN username:   ${VITE_TURN_USERNAME:0:8}... (${#VITE_TURN_USERNAME} chars)"
+echo "✓ TURN credential: ${VITE_TURN_CREDENTIAL:0:6}... (${#VITE_TURN_CREDENTIAL} chars)"
 echo ""
 
 # ── Build ─────────────────────────────────────────────────────────────────────
