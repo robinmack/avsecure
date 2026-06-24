@@ -5,11 +5,15 @@ import (
 	"fmt"
 	"math/big"
 	"sync"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
 
 const maxParticipantsPerRoom = 8
+
+// roomTTL is a var (not const) so tests can override it.
+var roomTTL = 4 * time.Hour
 
 type Participant struct {
 	Host     bool
@@ -26,12 +30,14 @@ type ParticipantInfo struct {
 }
 
 type RoomMap struct {
-	mu  sync.RWMutex
-	Map map[string][]*Participant
+	mu        sync.RWMutex
+	Map       map[string][]*Participant
+	expiresAt map[string]time.Time
 }
 
 func (r *RoomMap) Init() {
 	r.Map = make(map[string][]*Participant)
+	r.expiresAt = make(map[string]time.Time)
 }
 
 func (r *RoomMap) Get(roomID string) ([]*Participant, bool) {
@@ -48,6 +54,7 @@ func (r *RoomMap) CreateRoom() string {
 		id := generateRoomID()
 		if _, exists := r.Map[id]; !exists {
 			r.Map[id] = []*Participant{}
+			r.expiresAt[id] = time.Now().Add(roomTTL)
 			return id
 		}
 	}
@@ -61,6 +68,12 @@ func (r *RoomMap) InsertIntoRoom(roomID string, host bool, conn *websocket.Conn,
 	if !exists {
 		return fmt.Errorf("room %s does not exist", roomID)
 	}
+	// Only check expiry when the room is empty — an active room is never expired.
+	if len(participants) == 0 {
+		if exp, ok := r.expiresAt[roomID]; ok && time.Now().After(exp) {
+			return fmt.Errorf("room %s has expired", roomID)
+		}
+	}
 	if len(participants) >= maxParticipantsPerRoom {
 		return fmt.Errorf("room %s is full", roomID)
 	}
@@ -70,10 +83,11 @@ func (r *RoomMap) InsertIntoRoom(roomID string, host bool, conn *websocket.Conn,
 		}
 	}
 	r.Map[roomID] = append(r.Map[roomID], &Participant{Host: host, Conn: conn, PeerID: peerID, Nickname: nickname})
+	r.expiresAt[roomID] = time.Now().Add(roomTTL) // activity extends TTL
 	return nil
 }
 
-// RemoveFromRoom removes a connection and cleans up empty rooms.
+// RemoveFromRoom removes a connection. The room persists when empty; SweepExpired handles cleanup.
 func (r *RoomMap) RemoveFromRoom(roomID string, conn *websocket.Conn) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -88,10 +102,33 @@ func (r *RoomMap) RemoveFromRoom(roomID string, conn *websocket.Conn) {
 			updated = append(updated, p)
 		}
 	}
+	r.Map[roomID] = updated
 	if len(updated) == 0 {
-		delete(r.Map, roomID)
-	} else {
-		r.Map[roomID] = updated
+		// Room is now empty — start the inactivity countdown from now.
+		r.expiresAt[roomID] = time.Now().Add(roomTTL)
+	}
+}
+
+// Touch resets the expiry timer for a room, called on any signaling activity.
+func (r *RoomMap) Touch(roomID string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, exists := r.Map[roomID]; exists {
+		r.expiresAt[roomID] = time.Now().Add(roomTTL)
+	}
+}
+
+// SweepExpired deletes rooms that are both empty and past their TTL.
+// Intended to be called periodically (e.g. every 15 minutes).
+func (r *RoomMap) SweepExpired() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	now := time.Now()
+	for id := range r.expiresAt {
+		if now.After(r.expiresAt[id]) && len(r.Map[id]) == 0 {
+			delete(r.Map, id)
+			delete(r.expiresAt, id)
+		}
 	}
 }
 
@@ -103,6 +140,7 @@ func (r *RoomMap) DeleteRoom(roomID string) {
 			p.Conn.Close()
 		}
 		delete(r.Map, roomID)
+		delete(r.expiresAt, roomID)
 	}
 }
 

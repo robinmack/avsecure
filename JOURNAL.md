@@ -33,6 +33,60 @@ This file is the running logbook for the project. Update it before every major c
 
 ---
 
+## 2026-06-24 — Session 10: Persistent rooms with activity-based TTL + client heartbeat
+
+### Persistent rooms
+
+Rooms now survive after all participants leave. Previously, a room was deleted the moment its last participant disconnected — requiring everyone to stay in the call to keep it alive. Now:
+
+- Rooms persist for **4 hours of inactivity** after the last participant leaves
+- Any WebSocket message (offer, answer, ICE, ping) resets the 4-hour clock
+- A background goroutine sweeps expired empty rooms every 15 minutes
+- `InsertIntoRoom` rejects joins to expired rooms (server sends WebSocket close)
+
+**Server changes (`server/rooms.go`):**
+- `var roomTTL = 4 * time.Hour` (var not const — overridable in tests)
+- `RoomMap` gains `expiresAt map[string]time.Time` alongside `Map`
+- `Init()` initialises both maps
+- `CreateRoom()` sets TTL on creation
+- `InsertIntoRoom()` checks expiry (empty rooms only) and extends TTL on join
+- `RemoveFromRoom()` resets TTL on empty instead of deleting the room
+- New `Touch(roomID)` method — resets TTL to `now + 4h`
+- New `SweepExpired()` method — deletes expired empty rooms
+
+**Server changes (`server/signaling.go`):**
+- `AllRooms.Touch(roomID)` called on every message in the relay loop
+- `ping` messages handled specially: Touch + send `pong`, not relayed to other peers
+
+**Server changes (`main.go`):**
+- Sweep goroutine: `SweepExpired()` every 15 minutes
+
+### Client heartbeat (`client/src/components/Rooms.jsx`)
+
+- `setInterval` sends `{type: "ping"}` every 30 seconds while the WebSocket is open
+- Interval cleared on component unmount (hang up / navigate away)
+- As long as any tab is open and in a room, the room stays alive indefinitely
+- Server `pong` response is silently ignored (used for future connection health monitoring if needed)
+
+### Behaviour summary
+
+| Scenario | Result |
+|---|---|
+| Active call (offers, ICE, answers flowing) | Room alive (messages Touch TTL) |
+| Tab open, no call | Room alive (ping every 30s Touches TTL) |
+| All tabs closed after call | Room alive for 4 more hours |
+| 4h with no pings and no participants | Room swept and deleted |
+| Rejoin after everyone left (within 4h) | Works — empty room still exists |
+| Try to join after 4h expiry | Server rejects (WebSocket close with error) |
+
+### TDD
+
+7 new server tests (all pass, `-race`): `TestRemoveFromRoom_PersistsWhenEmpty`, `TestRoom_CanRejoinAfterLeaving`, `TestInsertIntoRoom_RejectsExpiredRoom`, `TestSweepExpired_RemovesExpiredEmptyRoom`, `TestSweepExpired_KeepsActiveRoom`, `TestSweepExpired_KeepsNonExpiredRoom`, `TestTouch_ExtendsRoomTTL`. Renamed `TestRemoveFromRoom_DeletesEmptyRoom` → `TestRemoveFromRoom_PersistsWhenEmpty`.
+
+2 new client tests: `pong` handled silently; join message includes nickname.
+
+---
+
 ## 2026-06-22 — Session 1: Infra restoration, UI overhaul, bug fixes, stats, tests
 
 ### Infrastructure

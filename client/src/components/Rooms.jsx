@@ -317,6 +317,8 @@ const Room = () => {
     if (!/^[a-zA-Z0-9_-]+$/.test(id)) { navigate('/'); return; }
     setRoomId(id);
 
+    let pingInterval;
+
     openCamera().then(() => {
       const ws = new WebSocket(`wss://avsecure.vip:8443/join?roomID=${id}`);
       wsRef.current = ws;
@@ -324,6 +326,13 @@ const Room = () => {
       ws.addEventListener('open', () => {
         ws.send(JSON.stringify({ type: 'join', peerId: ownPeerId.current, nickname }));
       });
+
+      // Heartbeat: keep the room alive while this tab is open.
+      // Server resets the 4-hour inactivity TTL on every ping.
+      pingInterval = setInterval(() => {
+        if (ws.readyState === WebSocket.OPEN)
+          ws.send(JSON.stringify({ type: 'ping' }));
+      }, 30_000);
 
       ws.addEventListener('message', async (e) => {
         try {
@@ -387,6 +396,7 @@ const Room = () => {
     });
 
     return () => {
+      clearInterval(pingInterval);
       closeAllPeers();
       userStream.current?.getTracks().forEach(t => t.stop());
       wsRef.current?.close();

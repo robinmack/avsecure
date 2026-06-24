@@ -176,6 +176,16 @@ func JoinRoomRequestHandler(w http.ResponseWriter, r *http.Request) {
 			}
 			break
 		}
+
+		// Every message from an active client keeps the room alive.
+		AllRooms.Touch(roomID)
+
+		// Ping/pong: client heartbeat to maintain room TTL; not relayed.
+		if msgType, _ := msg["type"].(string); msgType == "ping" {
+			ws.WriteJSON(map[string]interface{}{"type": "pong"})
+			continue
+		}
+
 		to, _ := msg["to"].(string)
 		from, _ := msg["from"].(string)
 		Broadcast <- BroadcastMsg{

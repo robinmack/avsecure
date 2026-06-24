@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -219,7 +220,7 @@ func TestRemoveFromRoom_RemovesParticipant(t *testing.T) {
 	}
 }
 
-func TestRemoveFromRoom_DeletesEmptyRoom(t *testing.T) {
+func TestRemoveFromRoom_PersistsWhenEmpty(t *testing.T) {
 	pool := newWSPool()
 	defer pool.Close()
 
@@ -231,8 +232,136 @@ func TestRemoveFromRoom_DeletesEmptyRoom(t *testing.T) {
 	rm.InsertIntoRoom(id, false, conn, "peer-1", "")
 	rm.RemoveFromRoom(id, conn)
 
+	if _, ok := rm.Get(id); !ok {
+		t.Error("room should persist after last participant leaves (persistent rooms)")
+	}
+}
+
+// ── Room TTL / persistence ───────────────────────────────────────────────────
+
+func TestRoom_CanRejoinAfterLeaving(t *testing.T) {
+	pool := newWSPool()
+	defer pool.Close()
+
+	var rm RoomMap
+	rm.Init()
+	id := rm.CreateRoom()
+
+	conn1 := pool.Conn(t)
+	if err := rm.InsertIntoRoom(id, false, conn1, "peer-1", "Alice"); err != nil {
+		t.Fatalf("first join: %v", err)
+	}
+	rm.RemoveFromRoom(id, conn1)
+
+	conn2 := pool.Conn(t)
+	if err := rm.InsertIntoRoom(id, false, conn2, "peer-2", "Bob"); err != nil {
+		t.Fatalf("rejoin: %v", err)
+	}
+	ids := rm.GetParticipantIDs(id)
+	if len(ids) != 1 || ids[0] != "peer-2" {
+		t.Errorf("expected [peer-2], got %v", ids)
+	}
+}
+
+func TestInsertIntoRoom_RejectsExpiredRoom(t *testing.T) {
+	old := roomTTL
+	roomTTL = 50 * time.Millisecond
+	defer func() { roomTTL = old }()
+
+	pool := newWSPool()
+	defer pool.Close()
+
+	var rm RoomMap
+	rm.Init()
+	id := rm.CreateRoom()
+
+	time.Sleep(100 * time.Millisecond) // well past 50ms TTL
+
+	err := rm.InsertIntoRoom(id, false, pool.Conn(t), "late-peer", "")
+	if err == nil {
+		t.Error("expected error when joining an expired empty room")
+	}
+}
+
+func TestSweepExpired_RemovesExpiredEmptyRoom(t *testing.T) {
+	old := roomTTL
+	roomTTL = 50 * time.Millisecond
+	defer func() { roomTTL = old }()
+
+	pool := newWSPool()
+	defer pool.Close()
+
+	var rm RoomMap
+	rm.Init()
+	id := rm.CreateRoom()
+
+	conn := pool.Conn(t)
+	if err := rm.InsertIntoRoom(id, false, conn, "peer-1", ""); err != nil {
+		t.Fatalf("InsertIntoRoom: %v", err)
+	}
+	rm.RemoveFromRoom(id, conn) // resets TTL to now+50ms
+
+	time.Sleep(100 * time.Millisecond) // well past 50ms
+	rm.SweepExpired()
+
 	if _, ok := rm.Get(id); ok {
-		t.Error("empty room should be deleted after last participant leaves")
+		t.Error("expired empty room should be removed by SweepExpired")
+	}
+}
+
+func TestSweepExpired_KeepsActiveRoom(t *testing.T) {
+	old := roomTTL
+	roomTTL = 50 * time.Millisecond
+	defer func() { roomTTL = old }()
+
+	pool := newWSPool()
+	defer pool.Close()
+
+	var rm RoomMap
+	rm.Init()
+	id := rm.CreateRoom()
+
+	if err := rm.InsertIntoRoom(id, false, pool.Conn(t), "peer-1", ""); err != nil {
+		t.Fatalf("InsertIntoRoom: %v", err)
+	}
+
+	time.Sleep(100 * time.Millisecond) // past TTL, but room has a participant
+	rm.SweepExpired()
+
+	if _, ok := rm.Get(id); !ok {
+		t.Error("room with active participants must not be swept regardless of TTL")
+	}
+}
+
+func TestSweepExpired_KeepsNonExpiredRoom(t *testing.T) {
+	var rm RoomMap
+	rm.Init()
+	id := rm.CreateRoom()
+
+	rm.SweepExpired()
+
+	if _, ok := rm.Get(id); !ok {
+		t.Error("non-expired room should survive a sweep")
+	}
+}
+
+func TestTouch_ExtendsRoomTTL(t *testing.T) {
+	old := roomTTL
+	roomTTL = 50 * time.Millisecond
+	defer func() { roomTTL = old }()
+
+	var rm RoomMap
+	rm.Init()
+	id := rm.CreateRoom()
+
+	time.Sleep(30 * time.Millisecond) // near expiry
+	rm.Touch(id)                      // reset TTL to now+50ms
+
+	time.Sleep(30 * time.Millisecond) // past original expiry, within extended window
+	rm.SweepExpired()
+
+	if _, ok := rm.Get(id); !ok {
+		t.Error("Touch should extend the room TTL")
 	}
 }
 

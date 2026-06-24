@@ -17,6 +17,13 @@ func main() {
 	// Start the single broadcaster goroutine here, not per-connection
 	go server.Broadcaster()
 
+	// Sweep expired empty rooms every 15 minutes
+	go func() {
+		for range time.Tick(15 * time.Minute) {
+			server.AllRooms.SweepExpired()
+		}
+	}()
+
 	if err := server.InitStats("stats.db"); err != nil {
 		log.Printf("Warning: stats DB unavailable: %v", err)
 	}

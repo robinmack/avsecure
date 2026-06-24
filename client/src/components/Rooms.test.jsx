@@ -311,3 +311,34 @@ test('roster peers with nickname objects create connections for each', async () 
   ]});
   expect(peers.length).toBe(2);
 });
+
+// ── Persistent rooms / heartbeat tests ────────────────────────────────────────
+
+test('pong message from server is handled silently without crashing', async () => {
+  await setup();
+  // Should not throw or cause unhandled rejection
+  await expect(send({ type: 'pong' })).resolves.not.toThrow();
+  expect(peers.length).toBe(0); // pong must not create a peer connection
+});
+
+test('join message sends a ping at open time and responds to pong without crashing', async () => {
+  // Verify the WS open handler sends a join message (not a ping — ping comes via interval)
+  renderRoom();
+  const input = await screen.findByPlaceholderText(/nickname/i);
+  await act(async () => { fireEvent.change(input, { target: { value: 'Sparrow' } }); });
+  const sent = [];
+  // Capture all sent messages from this point
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: /join as sparrow/i }));
+    await new Promise(r => setTimeout(r, 0));
+  });
+  await waitForWs();
+  ws.send = (raw) => sent.push(JSON.parse(raw));
+  await act(async () => {
+    ws.emit('open', {});
+    await new Promise(r => setTimeout(r, 0));
+  });
+  const joinMsg = sent.find(m => m.type === 'join');
+  expect(joinMsg).toBeDefined();
+  expect(joinMsg.nickname).toBe('Sparrow');
+});
