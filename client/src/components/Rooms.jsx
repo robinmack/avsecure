@@ -144,6 +144,12 @@ const Room = () => {
   const connectedAt = useRef(null);
   const qrRef       = useRef(null);
 
+  // ── Reconnect state ───────────────────────────────────────────────────────
+  const [connectionKey, setConnectionKey] = useState(0);
+  const [reconnecting,  setReconnecting]  = useState(false);
+  const userHungUp     = useRef(false);
+  const reconnectDelay = useRef(0); // 0 for unexpected drops; restart msg overrides with server's delay
+
   // ── Per-peer helpers ──────────────────────────────────────────────────────
 
   const createPeerFor = (remotePeerId) => {
@@ -295,6 +301,7 @@ const Room = () => {
   };
 
   const hangUp = () => {
+    userHungUp.current = true;
     if (connectedAt.current) {
       const duration = Math.round((Date.now() - connectedAt.current) / 1000);
       fetch('https://avsecure.vip:8443/stats/chat', {
@@ -316,6 +323,8 @@ const Room = () => {
     const id = location.pathname.split('/')[2];
     if (!/^[a-zA-Z0-9_-]+$/.test(id)) { navigate('/'); return; }
     setRoomId(id);
+    setReconnecting(false);
+    reconnectDelay.current = 0;
 
     let pingInterval;
 
@@ -337,7 +346,12 @@ const Room = () => {
       ws.addEventListener('message', async (e) => {
         try {
           const msg = JSON.parse(e.data);
-          if (!['join', 'leave', 'offer', 'answer', 'iceCandidate', 'roster'].includes(msg.type)) return;
+          if (msg.type === 'restart') {
+            reconnectDelay.current = msg.delay ?? 3000;
+            setReconnecting(true);
+            return;
+          }
+          if (!['join', 'leave', 'offer', 'answer', 'iceCandidate', 'roster', 'pong'].includes(msg.type)) return;
 
           if (msg.type === 'roster') {
             L('roster:', msg.peers);
@@ -393,6 +407,14 @@ const Room = () => {
           }
         } catch {}
       });
+
+      ws.addEventListener('close', () => {
+        clearInterval(pingInterval);
+        if (!userHungUp.current) {
+          setReconnecting(true);
+          setTimeout(() => setConnectionKey(k => k + 1), reconnectDelay.current);
+        }
+      });
     });
 
     return () => {
@@ -401,7 +423,7 @@ const Room = () => {
       userStream.current?.getTracks().forEach(t => t.stop());
       wsRef.current?.close();
     };
-  }, [nickname]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [nickname, connectionKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -421,6 +443,18 @@ const Room = () => {
 
   return (
     <div className="flex flex-col gap-4">
+
+      {reconnecting && (
+        <div
+          data-testid="reconnecting-banner"
+          className="flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200 text-sm font-medium"
+        >
+          <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+          </svg>
+          Reconnecting…
+        </div>
+      )}
 
       {/* Room info bar */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-4 rounded-xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800">

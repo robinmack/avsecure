@@ -28,6 +28,7 @@ Object.defineProperty(global, 'crypto', {
 let ws; // set by MockWebSocket constructor; reset in beforeEach
 class MockWebSocket {
   constructor() {
+    wsCreatedCount++;
     this.readyState = 1;
     this._listeners = {};
     ws = this;
@@ -74,6 +75,9 @@ class MockPeer {
   close() { this.connectionState = 'closed'; }
 }
 
+// Track how many MockWebSocket instances have been created — used to detect reconnects.
+let wsCreatedCount = 0;
+
 // ── Shared mock stream ────────────────────────────────────────────────────────
 
 const mockStream = {
@@ -87,6 +91,7 @@ const mockStream = {
 beforeEach(() => {
   peers.length = 0;
   ws = null;
+  wsCreatedCount = 0;
 
   global.WebSocket          = MockWebSocket;
   global.RTCPeerConnection  = MockPeer;
@@ -341,4 +346,40 @@ test('join message sends a ping at open time and responds to pong without crashi
   const joinMsg = sent.find(m => m.type === 'join');
   expect(joinMsg).toBeDefined();
   expect(joinMsg.nickname).toBe('Sparrow');
+});
+
+// ── Zero-downtime redeploy / reconnect ────────────────────────────────────────
+
+test('shows reconnecting banner when server sends a restart message', async () => {
+  await setup();
+  await act(async () => {
+    ws.emit('message', { data: JSON.stringify({ type: 'restart', delay: 0 }) });
+    await new Promise(r => setTimeout(r, 50));
+  });
+  expect(screen.getByTestId('reconnecting-banner')).toBeInTheDocument();
+});
+
+test('auto-reconnects after WebSocket closes unexpectedly', async () => {
+  await setup();
+  const countBefore = wsCreatedCount;
+  await act(async () => {
+    ws.readyState = 3; // CLOSED
+    ws.emit('close', {});
+    await new Promise(r => setTimeout(r, 100));
+  });
+  expect(wsCreatedCount).toBeGreaterThan(countBefore);
+});
+
+test('does not reconnect after user hangs up', async () => {
+  await setup();
+  const countBefore = wsCreatedCount;
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: /end call/i }));
+    await new Promise(r => setTimeout(r, 0));
+  });
+  await act(async () => {
+    ws.emit('close', {});
+    await new Promise(r => setTimeout(r, 100));
+  });
+  expect(wsCreatedCount).toBe(countBefore); // no new WS opened
 });

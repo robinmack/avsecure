@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // freshDB calls InitStats with a unique temp-dir path and returns a cleanup func.
@@ -20,6 +21,71 @@ func freshDB(t *testing.T) func() {
 		if statsDB != nil {
 			statsDB.Close()
 			statsDB = nil
+		}
+	}
+}
+
+// ── Room persistence ──────────────────────────────────────────────────────────
+
+func TestPersistRoom_AppearsInLoadPersistedRooms(t *testing.T) {
+	defer freshDB(t)()
+
+	exp := time.Now().Add(time.Hour).Truncate(time.Second)
+	PersistRoom("room-abc", exp)
+
+	rooms, err := LoadPersistedRooms()
+	if err != nil {
+		t.Fatalf("LoadPersistedRooms: %v", err)
+	}
+	got, ok := rooms["room-abc"]
+	if !ok {
+		t.Fatal("room-abc not found after PersistRoom")
+	}
+	if !got.Equal(exp) {
+		t.Errorf("expiry = %v, want %v", got, exp)
+	}
+}
+
+func TestLoadPersistedRooms_ExcludesExpired(t *testing.T) {
+	defer freshDB(t)()
+
+	PersistRoom("expired", time.Now().Add(-time.Hour))
+
+	rooms, err := LoadPersistedRooms()
+	if err != nil {
+		t.Fatalf("LoadPersistedRooms: %v", err)
+	}
+	if _, ok := rooms["expired"]; ok {
+		t.Error("expired room should not appear in LoadPersistedRooms")
+	}
+}
+
+func TestRemovePersistedRooms_DeletesSpecifiedRooms(t *testing.T) {
+	defer freshDB(t)()
+
+	PersistRoom("keep",   time.Now().Add(time.Hour))
+	PersistRoom("delete", time.Now().Add(time.Hour))
+	RemovePersistedRooms([]string{"delete"})
+
+	rooms, _ := LoadPersistedRooms()
+	if _, ok := rooms["delete"]; ok {
+		t.Error("delete should have been removed")
+	}
+	if _, ok := rooms["keep"]; !ok {
+		t.Error("keep should still exist")
+	}
+}
+
+func TestSyncRoomsToDB_UpsertsBatch(t *testing.T) {
+	defer freshDB(t)()
+
+	exp := time.Now().Add(2 * time.Hour).Truncate(time.Second)
+	SyncRoomsToDB(map[string]time.Time{"sync-A": exp, "sync-B": exp})
+
+	rooms, _ := LoadPersistedRooms()
+	for _, id := range []string{"sync-A", "sync-B"} {
+		if _, ok := rooms[id]; !ok {
+			t.Errorf("%s should appear after SyncRoomsToDB", id)
 		}
 	}
 }

@@ -56,6 +56,7 @@ func CreateRoomRequestHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	roomID := AllRooms.CreateRoom()
+	go PersistRoom(roomID, time.Now().Add(roomTTL))
 	RecordRoom()
 
 	type resp struct {

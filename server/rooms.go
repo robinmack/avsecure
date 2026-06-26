@@ -129,15 +129,56 @@ func (r *RoomMap) Touch(roomID string) {
 }
 
 // SweepExpired deletes rooms that are both empty and past their TTL.
-// Intended to be called periodically (e.g. every 15 minutes).
-func (r *RoomMap) SweepExpired() {
+// Returns the IDs of swept rooms so callers can clean them from persistent storage.
+func (r *RoomMap) SweepExpired() []string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	var swept []string
 	now := time.Now()
 	for id := range r.expiresAt {
 		if now.After(r.expiresAt[id]) && len(r.Map[id]) == 0 {
 			delete(r.Map, id)
 			delete(r.expiresAt, id)
+			swept = append(swept, id)
+		}
+	}
+	return swept
+}
+
+// Restore loads room IDs and TTLs from a prior run, skipping any that already exist.
+func (r *RoomMap) Restore(rooms map[string]time.Time) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for id, exp := range rooms {
+		if _, exists := r.Map[id]; !exists {
+			r.Map[id] = []*Participant{}
+			r.expiresAt[id] = exp
+		}
+	}
+}
+
+// Snapshot returns a copy of all current room IDs with their expiry times.
+func (r *RoomMap) Snapshot() map[string]time.Time {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make(map[string]time.Time, len(r.expiresAt))
+	for id, exp := range r.expiresAt {
+		out[id] = exp
+	}
+	return out
+}
+
+// BroadcastToAll sends msg to every connected participant across all rooms.
+// Used for server-wide notifications such as graceful-restart warnings.
+func (r *RoomMap) BroadcastToAll(msg map[string]interface{}) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for _, participants := range r.Map {
+		for _, p := range participants {
+			p.Mutex.Lock()
+			p.Conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+			_ = p.Conn.WriteJSON(msg)
+			p.Mutex.Unlock()
 		}
 	}
 }

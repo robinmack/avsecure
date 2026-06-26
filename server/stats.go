@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"time"
 
 	_ "modernc.org/sqlite"
 )
@@ -32,6 +33,11 @@ func InitStats(dbPath string) error {
 			duration_seconds INTEGER NOT NULL,
 			created_at       DATETIME DEFAULT (datetime('now'))
 		);
+
+		CREATE TABLE IF NOT EXISTS rooms (
+			id         TEXT PRIMARY KEY,
+			expires_at INTEGER NOT NULL
+		);
 	`)
 	if err != nil {
 		return err
@@ -40,6 +46,77 @@ func InitStats(dbPath string) error {
 	log.Println("Stats DB initialised:", dbPath)
 	return nil
 }
+
+// ── Room persistence ──────────────────────────────────────────────────────────
+
+// PersistRoom upserts a room's expiry into the rooms table.
+// Failures are logged but never returned — persistence is best-effort.
+func PersistRoom(id string, expiresAt time.Time) {
+	if statsDB == nil {
+		return
+	}
+	if _, err := statsDB.Exec(
+		`INSERT OR REPLACE INTO rooms (id, expires_at) VALUES (?, ?)`,
+		id, expiresAt.Unix(),
+	); err != nil {
+		log.Printf("persist room %s: %v", id, err)
+	}
+}
+
+// RemovePersistedRooms deletes the given room IDs from the rooms table.
+func RemovePersistedRooms(ids []string) {
+	if statsDB == nil || len(ids) == 0 {
+		return
+	}
+	for _, id := range ids {
+		if _, err := statsDB.Exec(`DELETE FROM rooms WHERE id = ?`, id); err != nil {
+			log.Printf("remove persisted room %s: %v", id, err)
+		}
+	}
+}
+
+// LoadPersistedRooms returns all non-expired rooms from the rooms table.
+func LoadPersistedRooms() (map[string]time.Time, error) {
+	if statsDB == nil {
+		return nil, nil
+	}
+	rows, err := statsDB.Query(
+		`SELECT id, expires_at FROM rooms WHERE expires_at > ?`, time.Now().Unix(),
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := make(map[string]time.Time)
+	for rows.Next() {
+		var id string
+		var expUnix int64
+		if err := rows.Scan(&id, &expUnix); err != nil {
+			continue
+		}
+		result[id] = time.Unix(expUnix, 0)
+	}
+	return result, nil
+}
+
+// SyncRoomsToDB batch-upserts a room snapshot — called periodically so TTLs
+// stay accurate across restarts even without per-Touch writes.
+func SyncRoomsToDB(rooms map[string]time.Time) {
+	if statsDB == nil || len(rooms) == 0 {
+		return
+	}
+	for id, exp := range rooms {
+		PersistRoom(id, exp)
+	}
+	// Clean up rows for rooms that no longer exist in memory.
+	if _, err := statsDB.Exec(
+		`DELETE FROM rooms WHERE expires_at <= ?`, time.Now().Unix(),
+	); err != nil {
+		log.Printf("sync rooms cleanup: %v", err)
+	}
+}
+
+// ── Counters ──────────────────────────────────────────────────────────────────
 
 func incrementCounter(key string) {
 	if statsDB == nil {

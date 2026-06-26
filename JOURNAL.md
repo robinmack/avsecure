@@ -422,6 +422,66 @@ All 7 tests pass after the fix.
 
 ---
 
+## 2026-06-24 — Session 7: Zero-downtime redeploys (Option A)
+
+### Goal
+
+Keep active calls alive through server redeploys by combining three techniques:
+- **Room ID persistence** in SQLite — rooms survive a process restart
+- **Graceful shutdown notification** — server warns clients before dying
+- **Client auto-reconnect** — signaling WebSocket re-connects automatically
+
+WebRTC media is peer-to-peer and never touched the signaling server; only the WS drops. With this change, calls resume within a few seconds of a `systemctl restart avsecure`.
+
+### What changed (TDD — all tests written before implementation)
+
+**`server/rooms.go`**
+- `SweepExpired()` now returns `[]string` (IDs swept) so callers can remove them from SQLite
+- `Restore(map[string]time.Time)` — loads room IDs + expiry times from a prior run, skips any that already exist in memory
+- `Snapshot() map[string]time.Time` — returns a copy of all live room TTLs for periodic DB sync
+- `BroadcastToAll(msg)` — sends a message to every connected participant across all rooms; used for the shutdown warning
+
+**`server/stats.go`**
+- New `rooms` table added to the existing `stats.db` SQLite database: `id TEXT PRIMARY KEY, expires_at INTEGER NOT NULL`
+- `PersistRoom(id, expiresAt)` — upserts a room's expiry; called async on CreateRoom
+- `LoadPersistedRooms()` — returns non-expired rooms on startup
+- `RemovePersistedRooms(ids)` — deletes swept rooms from the DB
+- `SyncRoomsToDB(snapshot)` — batch-upserts the current room snapshot; called every 5 minutes
+
+**`main.go`**
+- On startup: loads persisted rooms and calls `AllRooms.Restore(...)` before serving traffic
+- Periodic goroutine (every 5 min): syncs room TTLs to DB
+- Sweep goroutine (every 15 min): removes swept IDs from DB
+- `signal.Notify` now listens for `SIGTERM` in addition to `SIGINT`
+- On shutdown: broadcasts `{"type":"restart","delay":3000}` to all clients, sleeps 3 seconds, then exits
+
+**`client/src/components/Rooms.jsx`**
+- `connectionKey` state — incremented to trigger a fresh useEffect cycle (new WS + camera)
+- `reconnecting` state — drives the amber "Reconnecting…" banner
+- `userHungUp` ref — prevents reconnect when the user explicitly ends the call
+- `reconnectDelay` ref — defaults to 0ms (unexpected drops reconnect immediately); `restart` message from server sets it to `msg.delay` (3000ms) so the client waits for the server to finish restarting
+- `close` handler on WS: if `!userHungUp.current`, sets `reconnecting = true` and schedules `connectionKey` increment
+- `restart` message handler: sets `reconnectDelay`, shows banner (WS close follows shortly)
+- Banner: amber strip with spinner, shown while `reconnecting === true`
+- `hangUp`: sets `userHungUp.current = true` before closing to suppress reconnect
+
+### Tests added
+
+Server (69 total):
+- `TestSweepExpired_ReturnsSweptRoomIDs`, `TestSweepExpired_ReturnsNilWhenNothingExpired`
+- `TestRestore_RecreatesRooms`, `TestRestore_IgnoresExistingRooms`
+- `TestSnapshot_ContainsAllRooms`, `TestSnapshot_EmptyWhenNoRooms`
+- `TestBroadcastToAll_NoopOnEmptyRoom`, `TestBroadcastToAll_ReachesAllParticipants`
+- `TestPersistRoom_AppearsInLoadPersistedRooms`, `TestLoadPersistedRooms_ExcludesExpired`
+- `TestRemovePersistedRooms_DeletesSpecifiedRooms`, `TestSyncRoomsToDB_UpsertsBatch`
+
+Client (17 total):
+- `shows reconnecting banner when server sends a restart message`
+- `auto-reconnects after WebSocket closes unexpectedly`
+- `does not reconnect after user hangs up`
+
+---
+
 ## 2026-06-23 — Session 3: Author credit
 
 Added "A Macklepenny Movement project" credit to the footer of the landing page (`client/src/components/IndexPage.jsx`). Displayed in a subtle muted style beneath the privacy note.

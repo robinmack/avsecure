@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -425,6 +426,150 @@ func TestGetParticipantIDs_ExcludesRemovedPeer(t *testing.T) {
 	ids := rm.GetParticipantIDs(id)
 	if len(ids) != 1 || ids[0] != "peer-b" {
 		t.Errorf("expected [peer-b], got %v", ids)
+	}
+}
+
+// ── SweepExpired returns IDs ──────────────────────────────────────────────────
+
+func TestSweepExpired_ReturnsSweptRoomIDs(t *testing.T) {
+	old := roomTTL
+	roomTTL = 50 * time.Millisecond
+	defer func() { roomTTL = old }()
+
+	var rm RoomMap
+	rm.Init()
+	id := rm.CreateRoom()
+
+	time.Sleep(100 * time.Millisecond)
+	swept := rm.SweepExpired()
+
+	if len(swept) != 1 || swept[0] != id {
+		t.Errorf("expected [%q], got %v", id, swept)
+	}
+}
+
+func TestSweepExpired_ReturnsNilWhenNothingExpired(t *testing.T) {
+	var rm RoomMap
+	rm.Init()
+	rm.CreateRoom()
+
+	swept := rm.SweepExpired()
+	if len(swept) != 0 {
+		t.Errorf("expected empty, got %v", swept)
+	}
+}
+
+// ── RoomMap.Restore ───────────────────────────────────────────────────────────
+
+func TestRestore_RecreatesRooms(t *testing.T) {
+	var rm RoomMap
+	rm.Init()
+
+	future := time.Now().Add(time.Hour)
+	rm.Restore(map[string]time.Time{"room-A": future, "room-B": future})
+
+	for _, id := range []string{"room-A", "room-B"} {
+		if _, ok := rm.Get(id); !ok {
+			t.Errorf("room %q should exist after Restore", id)
+		}
+	}
+}
+
+func TestRestore_IgnoresExistingRooms(t *testing.T) {
+	var rm RoomMap
+	rm.Init()
+	existing := rm.CreateRoom()
+
+	// Restore must not overwrite a room that's already live.
+	rm.Restore(map[string]time.Time{existing: time.Now().Add(time.Hour)})
+
+	if _, ok := rm.Get(existing); !ok {
+		t.Error("existing room should survive Restore")
+	}
+}
+
+// ── RoomMap.Snapshot ──────────────────────────────────────────────────────────
+
+func TestSnapshot_ContainsAllRooms(t *testing.T) {
+	var rm RoomMap
+	rm.Init()
+	id1 := rm.CreateRoom()
+	id2 := rm.CreateRoom()
+
+	snap := rm.Snapshot()
+	for _, id := range []string{id1, id2} {
+		if _, ok := snap[id]; !ok {
+			t.Errorf("snapshot missing %q", id)
+		}
+	}
+}
+
+func TestSnapshot_EmptyWhenNoRooms(t *testing.T) {
+	var rm RoomMap
+	rm.Init()
+	if n := len(rm.Snapshot()); n != 0 {
+		t.Errorf("expected empty snapshot, got %d entries", n)
+	}
+}
+
+// ── RoomMap.BroadcastToAll ────────────────────────────────────────────────────
+
+func TestBroadcastToAll_NoopOnEmptyRoom(t *testing.T) {
+	var rm RoomMap
+	rm.Init()
+	rm.CreateRoom()
+	rm.BroadcastToAll(map[string]interface{}{"type": "restart", "delay": 3000})
+}
+
+func TestBroadcastToAll_ReachesAllParticipants(t *testing.T) {
+	u := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
+	serverConnCh := make(chan *websocket.Conn, 4)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		c, _ := u.Upgrade(w, r, nil)
+		serverConnCh <- c
+		for { if _, _, err := c.ReadMessage(); err != nil { break } }
+	}))
+	defer srv.Close()
+
+	var rm RoomMap
+	rm.Init()
+	roomID := rm.CreateRoom()
+
+	type pair struct{ msgs chan map[string]interface{} }
+	pairs := make([]pair, 2)
+	var wg sync.WaitGroup
+
+	for i := 0; i < 2; i++ {
+		clientConn, _, err := websocket.DefaultDialer.Dial("ws://"+srv.Listener.Addr().String(), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		serverConn := <-serverConnCh
+		rm.InsertIntoRoom(roomID, false, serverConn, fmt.Sprintf("p%d", i), "")
+
+		ch := make(chan map[string]interface{}, 2)
+		pairs[i] = pair{msgs: ch}
+		wg.Add(1)
+		go func(c *websocket.Conn, ch chan map[string]interface{}) {
+			defer wg.Done()
+			var m map[string]interface{}
+			if err := c.ReadJSON(&m); err == nil {
+				ch <- m
+			}
+		}(clientConn, ch)
+	}
+
+	rm.BroadcastToAll(map[string]interface{}{"type": "restart", "delay": 3000})
+
+	for i, p := range pairs {
+		select {
+		case msg := <-p.msgs:
+			if msg["type"] != "restart" {
+				t.Errorf("pair %d: got type %q, want 'restart'", i, msg["type"])
+			}
+		case <-time.After(time.Second):
+			t.Errorf("pair %d: timed out waiting for restart", i)
+		}
 	}
 }
 
